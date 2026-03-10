@@ -1,0 +1,27 @@
+const router = require('express').Router();
+const { 
+  createOrder, 
+  getMyOrders, 
+  getMyOrder, 
+  updateOrderStatus,
+  cancelOrder,
+} = require('../controllers/orderController');
+const { authenticate } = require('../middleware/auth');
+
+router.use(authenticate);
+
+// POST /api/orders  — place order from cart
+router.post('/', createOrder);
+
+// GET /api/orders  — all my orders
+router.get('/', getMyOrders);
+
+router.patch('/:id/status', authenticate, updateOrderStatus);
+
+// PATCH /api/orders/:id/cancel  — cancel a pending order
+router.patch('/:id/cancel', cancelOrder);
+
+// GET /api/orders/:id  — single order (own only)
+router.get('/:id', getMyOrder);
+
+module.exports = router;
