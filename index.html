@@ -2615,25 +2615,24 @@
                 this.renderPagination(totalItems);
             },
             async loadProductsFromAPI() {
+                // Products already loaded as static data — just render
+                if (this.data.products && this.data.products.length > 0) {
+                    this.renderShop();
+                    return;
+                }
                 try {
                     const response = await fetch("http://127.0.0.1:3000/api/products");
-
-                    if (!response.ok) {
-                        throw new Error("Network response was not ok");
-                    }
-
+                    if (!response.ok) throw new Error("Network response was not ok");
                     const json = await response.json();
                     const apiProducts = Array.isArray(json.data) ? json.data : [];
-
                     const PLACEHOLDER = "https://placehold.co/600x800?text=No+Image";
-
                     this.data.products = apiProducts.map(item => ({
                         id: item.id,
                         name: item.name || "Unnamed Product",
                         price: item.price,
                         stock: item.stock ?? 0,
                         images: (item.images && item.images.length > 0) ? item.images : (item.image_url ? [item.image_url] : [PLACEHOLDER]),
-                        category: item.category || "Perfume",
+                        category: item.category || "Uncategorized",
                         color: item.color || null,
                         sizes: Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes : [],
                         description: item.description || null,
@@ -2643,11 +2642,10 @@
                         originalPrice: item.original_price || null,
                         total_sold: item.total_sold || 0,
                     }));
-
                     this.renderShop();
-
                 } catch (err) {
-                    console.error("Fetch error:", err);
+                    console.log('loadProductsFromAPI: using static products');
+                    this.renderShop();
                 }
             },
 
@@ -5220,36 +5218,157 @@
             return 'Rp ' + numInt.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         };
 
-        // --- Wrap init() to inject API products before the app starts ---
+        // --- Static products for Midtrans review (no backend needed) ---
+        const STATIC_PRODUCTS = [
+            {
+                id: 1,
+                name: 'Alvia Outer Set',
+                description: 'ALVIA OUTER SET | OUTER WANITA — Setelan Wanita pilihan tepat untuk penampilan Anda. Set ini dirancang khusus untuk wanita yang ingin tampil modis.',
+                price: 2011600,
+                originalPrice: null,
+                category: 'Outerwear',
+                color: '',
+                stock: 20,
+                status: 'New',
+                discount: null,
+                sizes: ['S', 'M', 'L', 'XL'],
+                total_sold: 12,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wh-mlnd59ziyc5gb8.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-82250-ml38e1wa7z7lbd.webp'
+                ]
+            },
+            {
+                id: 2,
+                name: 'Nayla Dress',
+                description: 'NAYLA DRESS | DRESS WANITA — Model dress wanita pilihan tepat untuk penampilan Anda. Desain menarik, cocok untuk berbagai kesempatan. Dengan model yang nyaman, dress ini membuat Anda merasa percaya diri sepanjang hari.',
+                price: 1011150,
+                originalPrice: null,
+                category: 'Tops',
+                color: '',
+                stock: 30,
+                status: 'New',
+                discount: null,
+                sizes: ['All Size'],
+                total_sold: 25,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wp-mlm72n4tsgldbd@resize_w900_nl.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wm-mlm72n4ttv5ta1@resize_w900_nl.webp'
+                ]
+            },
+            {
+                id: 3,
+                name: 'Cella Dress',
+                description: 'CELLA DRESS | DRESS WANITA — Pilihan tepat untuk penampilan Anda. Cocok untuk berbagai kesempatan. Dress ini dilengkapi dengan desain yang menarik, tampilan elegan dan modis. Dirancang untuk kenyamanan Anda sepanjang hari.',
+                price: 1177000,
+                originalPrice: null,
+                category: 'Tops',
+                color: '',
+                stock: 25,
+                status: null,
+                discount: null,
+                sizes: ['S', 'M', 'L', 'XL'],
+                total_sold: 18,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wp-mleugzuxyxoiad.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wm-mleugzuvxw5g2a.webp'
+                ]
+            },
+            {
+                id: 4,
+                name: 'Attira Sprinkle Pashmina',
+                description: 'Attira Sprinkle Pashmina — Lihat gambar untuk ukuran. Harap diperhatikan bahwa warna mungkin berbeda karena flash kamera dan/atau pengaturan layar Anda.',
+                price: 347750,
+                originalPrice: null,
+                category: 'Accessories',
+                color: '',
+                stock: 50,
+                status: null,
+                discount: null,
+                sizes: ['All Size'],
+                total_sold: 40,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-8224u-mk4vqxsru87c83.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-8224z-mk4vqxsrrf2ge3.webp'
+                ]
+            },
+            {
+                id: 5,
+                name: 'Nauva Dress',
+                description: 'Nauva Dress — Dress Wanita. Material: LINEN. Lihat gambar untuk ukuran. Harap pilih ukuran yang tepat sesuai standar sentimeter yang tercantum.',
+                price: 749000,
+                originalPrice: null,
+                category: 'Tops',
+                color: '',
+                stock: 20,
+                status: null,
+                discount: null,
+                sizes: ['S', 'M', 'L', 'XL'],
+                total_sold: 15,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-822ws-mlnd59zikah01b@resize_w900_nl.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-822wj-mlf3hrcfe0aqda@resize_w900_nl.webp'
+                ]
+            },
+            {
+                id: 6,
+                name: 'Lavida Dress',
+                description: 'Lavida Dress — Dress Wanita. Material: POLYESTER. Detail ukuran tersedia di slide akhir. Harap diperhatikan bahwa warna mungkin berbeda karena flash kamera dan/atau pengaturan layar Anda.',
+                price: 850650,
+                originalPrice: null,
+                category: 'Tops',
+                color: '',
+                stock: 20,
+                status: null,
+                discount: null,
+                sizes: ['S', 'M', 'L', 'XL'],
+                total_sold: 10,
+                rating: 5,
+                images: [
+                    'https://down-id.img.susercontent.com/file/id-11134207-8224v-mjw5wi0uz4li96@resize_w900_nl.webp',
+                    'https://down-id.img.susercontent.com/file/id-11134207-8224x-mjw5wi0uxq12ea@resize_w900_nl.webp'
+                ]
+            }
+        ];
+
+        // --- Wrap init() to inject products before the app starts ---
         const _originalInit = app.init.bind(app);
         app.init = async function () {
+            // Use static products (no backend needed for review)
+            this.data.products = STATIC_PRODUCTS;
             try {
+                // Try API anyway in case backend is live
                 const response = await fetch("http://127.0.0.1:3000/api/products")
-                if (!response.ok) throw new Error('Network response was not ok: ' + response.status);
-                const json = await response.json();
-                const apiProducts = Array.isArray(json.data) ? json.data : [];
-
-                const PLACEHOLDER = 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
-
-                // Map API shape → internal product shape expected by the app
-                this.data.products = apiProducts.map(item => ({
-                    id: item.id,
-                    name: item.name || 'Unnamed Product',
-                    description: item.description || '',
-                    price: parseFloat(item.price) || 0,
-                    originalPrice: null,
-                    category: item.category_name || 'Uncategorized',
-                    color: '',
-                    stock: item.stock != null ? item.stock : 0,
-                    status: null,
-                    discount: null,
-                    sizes: ['S', 'M', 'L'],
-                    total_sold: 0,
-                    rating: 0,
-                    images: [item.image_url ? item.image_url : PLACEHOLDER]
-                }));
+                if (response.ok) {
+                    const json = await response.json();
+                    const apiProducts = Array.isArray(json.data) ? json.data : [];
+                    if (apiProducts.length > 0) {
+                        const PLACEHOLDER = 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
+                        this.data.products = apiProducts.map(item => ({
+                            id: item.id,
+                            name: item.name || 'Unnamed Product',
+                            description: item.description || '',
+                            price: parseFloat(item.price) || 0,
+                            originalPrice: null,
+                            category: item.category_name || 'Uncategorized',
+                            color: '',
+                            stock: item.stock != null ? item.stock : 0,
+                            status: null,
+                            discount: null,
+                            sizes: ['S', 'M', 'L'],
+                            total_sold: 0,
+                            rating: 0,
+                            images: [item.image_url ? item.image_url : PLACEHOLDER]
+                        }));
+                    }
+                }
             } catch (err) {
-                console.error('Failed to fetch products from API:', err);
+                console.log('Using static products (API not available)');
             }
 
             // Load homepage settings from API
