@@ -14,11 +14,10 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- Midtrans Snap — Sandbox -->
-    <!-- ⚠️  Replace SET_YOUR_CLIENT_KEY_HERE with your real Sandbox Client Key from Midtrans Dashboard -->
+    <!-- Midtrans Snap — Production -->
     <script
         src="https://app.midtrans.com/snap/snap.js"
-        data-client-key="Mid-client-1B-KcLLsE2ZCLnk3">
+        data-client-key="Mid-client-Dk0CC5Yu2T9Il_u5">
     </script>
 
     <style>
@@ -3730,35 +3729,35 @@
                     discount_amount:  discount,
                 };
 
-                try {
-                    const response = await fetch("http://localhost:3000/api/orders", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(orderPayload)
-                    });
-
-                    const data = await response.json();
-
-                    if (!response.ok) {
-                    throw new Error(data.message || "Failed to create order");
-                    }
-
-                    this.updateBadges();
-
-                    this.data.lastOrderId = data.order.id;
-                    document.getElementById('success-order-id') && (document.getElementById('success-order-id').textContent = data.order.id);
-
-                    // CHANGED: route to payment page first instead of order-success directly
-                    this.navigateTo(`payment?id=${data.order.id}`);
-
-                } catch (err) {
-                    console.error(err);
-                    this.showToast(err.message || "Order failed. Please try again.");
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.textContent = this.t('placeOrder');
-                    }
-                }
+                // ── Guest/demo mode: create local order, skip backend ──
+                const localOrderId = 'NAINARA-' + Date.now();
+                const localOrder = {
+                    id: localOrderId,
+                    status: 'pending',
+                    total_amount: grandTotal,
+                    shipping_cost: 0,
+                    discount_amount: orderPayload.discount_amount || 0,
+                    promo_code: orderPayload.promo_code || null,
+                    name: orderPayload.name,
+                    phone: orderPayload.phone,
+                    email: orderPayload.email,
+                    address: orderPayload.address,
+                    items: this.data.cart.map(i => ({
+                        product_name: i.name,
+                        image_url: i.image_url || i.image || '',
+                        quantity: i.qty,
+                        size: i.size || '',
+                        price: i.price
+                    }))
+                };
+                // Save order locally so renderPayment can access it
+                localStorage.setItem('_localOrder_' + localOrderId, JSON.stringify(localOrder));
+                this.data.lastOrderId = localOrderId;
+                this.data.cart = [];
+                this.save();
+                this.updateBadges();
+                if (btn) { btn.disabled = false; btn.textContent = this.t('placeOrder'); }
+                this.navigateTo(`payment?id=${localOrderId}`);
             },
             async renderOrders() {
 
@@ -4565,48 +4564,28 @@
                 const container = document.getElementById('payment-content');
                 if (!container) return;
 
-                // Guard: must be logged in
-                const token = this.getToken();
-                if (!token) {
-                    this.openAuthModal('login');
-                    return;
-                }
-
-                // Guard: orderId must be present
                 if (!orderId) {
-                    container.innerHTML = `
-                        <div class="payment-page-wrap">
-                            <div class="payment-notice error-notice">
-                                <i class="fa-solid fa-circle-exclamation"></i>
-                                <div>No order ID provided. Please go back and try again.</div>
-                            </div>
-                            <button class="btn-pay-back" onclick="app.navigateTo('orders')">
-                                <i class="fa-solid fa-arrow-left"></i> Back to My Orders
-                            </button>
-                        </div>`;
+                    container.innerHTML = `<div class="payment-page-wrap"><div class="payment-notice error-notice"><i class="fa-solid fa-circle-exclamation"></i><div>No order ID provided.</div></div></div>`;
                     return;
                 }
 
-                // Loading skeleton
-                container.innerHTML = `
-                    <div class="payment-page-wrap">
-                        <div style="text-align:center; padding:80px 0; color:var(--secondary-text);">
-                            <i class="fa-solid fa-spinner fa-spin" style="font-size:1.8rem; margin-bottom:16px; display:block;"></i>
-                            Loading order details&hellip;
-                        </div>
-                    </div>`;
+                container.innerHTML = `<div class="payment-page-wrap"><div style="text-align:center;padding:80px 0;color:var(--secondary-text);"><i class="fa-solid fa-spinner fa-spin" style="font-size:1.8rem;margin-bottom:16px;display:block;"></i>Loading order&hellip;</div></div>`;
 
                 try {
-                    // Fetch the order detail
-                    const res = await fetch(`http://localhost:3000/api/orders/${orderId}`, {
-                        headers: { 'Content-Type': 'application/json', ...this.authHeaders() }
-                    });
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || `Server error ${res.status}`);
+                    // Try local order first (guest/demo mode)
+                    let order = null;
+                    const localRaw = localStorage.getItem('_localOrder_' + orderId);
+                    if (localRaw) {
+                        order = JSON.parse(localRaw);
+                    } else {
+                        // Fallback: try backend
+                        const res = await fetch(`http://localhost:3000/api/orders/${orderId}`, {
+                            headers: { 'Content-Type': 'application/json', ...this.authHeaders() }
+                        });
+                        if (!res.ok) throw new Error(`Server error ${res.status}`);
+                        const data = await res.json();
+                        order = data.order || data;
                     }
-                    const data = await res.json();
-                    const order = data.order || data;
 
                     // If order is already paid, redirect to success page
                     if (order.status === 'paid') {
@@ -4745,20 +4724,49 @@
                 if (noticeArea) noticeArea.innerHTML = '';
 
                 try {
-                    // POST to backend to get snap_token
-                    const res = await fetch(`http://localhost:3000/api/payments/${orderId}`, {
+                    // Get local order to build Midtrans request
+                    const localRaw = localStorage.getItem('_localOrder_' + orderId);
+                    if (!localRaw) throw new Error('Order not found.');
+                    const localOrder = JSON.parse(localRaw);
+
+                    // Call Midtrans Snap API directly from frontend (production)
+                    const SERVER_KEY = 'Mid-server-yJXwUzoLnnFxSLwLNQIZSQau';
+                    const authHeader = 'Basic ' + btoa(SERVER_KEY + ':');
+
+                    const mtRes = await fetch('https://app.midtrans.com/snap/v1/transactions', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...this.authHeaders() }
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': authHeader
+                        },
+                        body: JSON.stringify({
+                            transaction_details: {
+                                order_id: String(orderId),
+                                gross_amount: Math.round(localOrder.total_amount)
+                            },
+                            customer_details: {
+                                first_name: localOrder.name || 'Customer',
+                                email: localOrder.email || 'customer@nainaraboutique.com',
+                                phone: localOrder.phone || '+6281110114443'
+                            },
+                            item_details: localOrder.items && localOrder.items.length > 0
+                                ? localOrder.items.map(i => ({
+                                    id: String(i.product_name || 'item').replace(/\s+/g, '-').toLowerCase().slice(0,50),
+                                    price: Math.round(i.price),
+                                    quantity: i.quantity,
+                                    name: (i.product_name || 'Product').slice(0, 50)
+                                }))
+                                : [{ id: 'order', price: Math.round(localOrder.total_amount), quantity: 1, name: 'Nainara Order' }]
+                        })
                     });
 
-                    if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.message || `Server error ${res.status}`);
+                    if (!mtRes.ok) {
+                        const errData = await mtRes.json().catch(() => ({}));
+                        throw new Error((errData.error_messages || []).join(', ') || `Midtrans error ${mtRes.status}`);
                     }
 
-                    const { snap_token } = await res.json();
-
-                    if (!snap_token) throw new Error('snap_token not returned by server.');
+                    const { token: snap_token } = await mtRes.json();
+                    if (!snap_token) throw new Error('snap_token not returned by Midtrans.');
 
                     // Restore button (Snap popup might be dismissed without paying)
                     if (btn) {
