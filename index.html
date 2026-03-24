@@ -4668,11 +4668,11 @@
 
                             <div id="payment-notice-area"></div>
 
-                            <button id="btn-snap-pay" class="btn-pay-now" onclick="app._triggerSnapPay(${orderId})">
+                            <button id="btn-snap-pay" class="btn-pay-now" onclick="app._triggerSnapPay('${orderId}')">
                                 <i class="fa-solid fa-lock"></i>
                                 Pay Now &mdash; ${this.formatMoney(order.total_amount)}
                             </button>
-                            <button class="btn-pay-back" onclick="app.navigateTo('order-detail?id=${orderId}')">
+                            <button class="btn-pay-back" onclick="app.navigateTo(\`order-detail?id=${orderId}\`)">
                                 <i class="fa-solid fa-arrow-left"></i> Cancel &amp; Go Back
                             </button>
 
