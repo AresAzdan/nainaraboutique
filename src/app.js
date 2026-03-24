@@ -25,7 +25,13 @@ const app = express();
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(cors({
-  origin: "http://127.0.0.1:5500"
+  origin: [
+    'http://127.0.0.1:5500',
+    'http://localhost:5500',
+    'https://nainaraboutique.vercel.app',
+    process.env.FRONTEND_URL,
+  ].filter(Boolean),
+  credentials: true
 }));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
