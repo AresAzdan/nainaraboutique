@@ -394,6 +394,10 @@ const createGuestOrder = async (req, res, next) => {
         phone: phone || '08000000000'
       }
     };
+    console.log("=== DEBUG MIDTRANS ===");
+    console.log("IS PROD:", process.env.MIDTRANS_IS_PRODUCTION);
+    console.log("SERVER KEY:", process.env.MIDTRANS_SERVER_KEY);
+    console.log("======================");
     console.log('MODE:', snap.apiConfig.isProduction, 'KUNCI:', snap.apiConfig.serverKey);
     const transaction = await snap.createTransaction(parameter);
 
