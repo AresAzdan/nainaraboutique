@@ -8,8 +8,8 @@ const { createError } = require('../middleware/errorHandler');
 const midtransClient = require('midtrans-client');
 const snap = new midtransClient.Snap({
   isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
-  serverKey: 'SB-Mid-server-bH8aBJpzlGIPmXAGuWaZN25L'
-  clientKey: 'SB-Mid-client-wf3yiq_Nojzp2NCt'
+  serverKey: process.env.MIDTRANS_SERVER_KEY,
+  clientKey: process.env.MIDTRANS_CLIENT_KEY,
 });
 
 const VALID_STATUSES = ['pending', 'paid', 'processing', 'shipped', 'completed', 'cancelled', 'return_requested', 'returned'];
