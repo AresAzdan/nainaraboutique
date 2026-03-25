@@ -7,7 +7,7 @@ const { createError } = require('../middleware/errorHandler');
 // Setup Midtrans Client
 const midtransClient = require('midtrans-client');
 const snap = new midtransClient.Snap({
-  isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
+  isProduction: false,
   serverKey: 'Mid-server-bH8aBJpzIGIPmXAGuWaZN25L'
 });
 
