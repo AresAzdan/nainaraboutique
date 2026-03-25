@@ -4732,7 +4732,7 @@
                     // POST to Railway backend to create order + get snap_token
                     const res = await fetch('https://nainaraboutique-production.up.railway.app/api/orders', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
                         body: JSON.stringify({
                             name:             localOrder.name,
                             phone:            localOrder.phone,
