@@ -1,12 +1,16 @@
 const router = require('express').Router();
 const { 
-  createOrder, 
+  createOrder,
+  createGuestOrder,
   getMyOrders, 
   getMyOrder, 
   updateOrderStatus,
   cancelOrder,
 } = require('../controllers/orderController');
 const { authenticate } = require('../middleware/auth');
+
+// POST /api/orders/guest  — public, no login required
+router.post('/guest', createGuestOrder);
 
 router.use(authenticate);
 
