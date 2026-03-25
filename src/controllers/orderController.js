@@ -393,6 +393,7 @@ const createGuestOrder = async (req, res, next) => {
         phone: phone || '08000000000'
       }
     };
+    console.log('MODE:', snap.apiConfig.isProduction, 'KUNCI:', snap.apiConfig.serverKey);
     const transaction = await snap.createTransaction(parameter);
 
     res.status(201).json({
