@@ -25,12 +25,18 @@ const app = express();
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(cors({
-  origin: [
-    'http://127.0.0.1:5500',
-    'http://localhost:5500',
-    'https://nainaraboutique.vercel.app',
-    process.env.FRONTEND_URL,
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    const allowed = [
+      'http://127.0.0.1:5500',
+      'http://localhost:5500',
+      'https://nainaraboutique.vercel.app',
+      process.env.FRONTEND_URL,
+    ].filter(Boolean);
+    const isVercelPreview = /^https:\/\/nainaraboutique(-[a-z0-9-]+)?\.vercel\.app$/.test(origin);
+    if (allowed.includes(origin) || isVercelPreview) return callback(null, true);
+    return callback(new Error('CORS blocked: ' + origin));
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '20mb' }));
