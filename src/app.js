@@ -24,12 +24,12 @@ const { errorHandler } = require('./middleware/errorHandler');
 const app = express();
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
     const allowed = [
-      'http://127.0.0.1:5500',
-      'http://localhost:5500',
+      'http://localhost:3000',
       'https://nainaraboutique.vercel.app',
       process.env.FRONTEND_URL,
     ].filter(Boolean);
@@ -66,6 +66,7 @@ app.post('/api/promo-codes/validate', authenticate, validatePromoCode);
 
 // ─── Public Homepage Settings ────────────────────────────────────────────────
 app.get('/api/homepage', getHomepage);
+
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth',       authRoutes);
