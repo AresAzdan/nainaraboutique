@@ -4730,7 +4730,11 @@
                     const localOrder = JSON.parse(localRaw);
 
                     // POST to Railway backend to create order + get snap_token
-                    const res = await fetch('https://nainaraboutique-production.up.railway.app/api/orders', {
+                    const _snapToken = this.getToken();
+                    const _endpoint = _snapToken
+                        ? 'https://nainaraboutique-production.up.railway.app/api/orders'
+                        : 'https://nainaraboutique-production.up.railway.app/api/orders/guest';
+                    const res = await fetch(_endpoint, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
                         body: JSON.stringify({
