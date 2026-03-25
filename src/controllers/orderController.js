@@ -366,4 +366,96 @@ const adminGetOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { createOrder, getMyOrders, getMyOrder, getAllOrders, updateOrderStatus, cancelOrder, adminUpdateOrderStatus, adminGetOrder };
+// POST /api/orders/guest  — create order without authentication (guest checkout)
+const createGuestOrder = async (req, res, next) => {
+  const client = await db.connect();
+  try {
+    const {
+      name = null,
+      phone = null,
+      email = null,
+      address = '',
+      province = '',
+      city = '',
+      district = '',
+      postal_code = '',
+      courier = 'free',
+      shipping_service = 'Free Shipping',
+      shipping_cost = 0,
+      discount_amount = 0,
+      promo_code = null,
+      total_amount,
+      items = [],
+    } = req.body;
+
+    if (!items || items.length === 0) throw createError(400, 'No items provided.');
+    if (!total_amount) throw createError(400, 'total_amount is required.');
+
+    await client.query('BEGIN');
+
+    // Build shipping address string
+    const fullAddress = [address, district, city, province, postal_code].filter(Boolean).join(', ');
+    const shippingMethod = [courier, shipping_service].filter(Boolean).join(' - ');
+
+    const discountVal = parseFloat(discount_amount) || 0;
+    const shippingVal = parseFloat(shipping_cost) || 0;
+    const totalAmountVal = parseFloat(total_amount);
+
+    // Insert order row (no user_id for guests)
+    const orderResult = await client.query(
+      `INSERT INTO orders
+        (user_id, total_amount, shipping_cost, discount_amount, promo_code,
+         shipping_address, shipping_method, phone, recipient_name, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending', NOW())
+       RETURNING *`,
+      [
+        null,
+        totalAmountVal,
+        shippingVal,
+        discountVal,
+        promo_code || null,
+        fullAddress || null,
+        shippingMethod || null,
+        phone || null,
+        name || null,
+      ]
+    );
+    const order = orderResult.rows[0];
+
+    // Insert order items
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          order.id,
+          item.product_id || null,
+          item.quantity || 1,
+          parseFloat(item.price) || 0,
+          item.product_name || item.name || 'Product',
+          item.size || null,
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Fetch items back for response
+    const orderItemsResult = await client.query(
+      'SELECT * FROM order_items WHERE order_id = $1',
+      [order.id]
+    );
+
+    res.status(201).json({
+      message: 'Guest order placed successfully.',
+      order: { ...order, items: orderItemsResult.rows },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { createOrder, createGuestOrder, getMyOrders, getMyOrder, getAllOrders, updateOrderStatus, cancelOrder, adminUpdateOrderStatus, adminGetOrder };
