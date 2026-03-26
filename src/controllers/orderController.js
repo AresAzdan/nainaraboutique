@@ -415,3 +415,20 @@ const createGuestOrder = async (req, res, next) => {
 };
 
 module.exports = { createOrder, createGuestOrder, getMyOrders, getMyOrder, getAllOrders, updateOrderStatus, cancelOrder, adminUpdateOrderStatus, adminGetOrder };
+
+export const midtransNotification = async (req, res) => {
+  try {
+    console.log("=== MIDTRANS NOTIFICATION ===");
+    console.log(req.body);
+
+    const { order_id, transaction_status } = req.body;
+
+    console.log("Order ID:", order_id);
+    console.log("Status:", transaction_status);
+
+    res.status(200).json({ message: "OK" });
+  } catch (error) {
+    console.error("Notification error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
