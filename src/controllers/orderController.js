@@ -416,7 +416,7 @@ const createGuestOrder = async (req, res, next) => {
 
 module.exports = { createOrder, createGuestOrder, getMyOrders, getMyOrder, getAllOrders, updateOrderStatus, cancelOrder, adminUpdateOrderStatus, adminGetOrder };
 
-export const midtransNotification = async (req, res) => {
+const midtransNotification = async (req, res) => {
   try {
     console.log("=== MIDTRANS NOTIFICATION ===");
     console.log(req.body);
@@ -432,3 +432,12 @@ export const midtransNotification = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+module.exports = {
+  createOrder,
+  createGuestOrder,
+  getMyOrders,
+  getMyOrder,
+  updateOrderStatus,
+  cancelOrder,
+  midtransNotification, // ⬅️ WAJIB ditambahkan
+};D
