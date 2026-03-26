@@ -1,7 +1,8 @@
+const db           = require('../config/db');
 const ProductModel = require('../models/productModel');
 const { createError } = require('../middleware/errorHandler');
 
-// GET /api/products
+// ─── GET /api/products ────────────────────────────────────────────────────────
 const getProducts = async (req, res, next) => {
   try {
     const { category_id, search, page = 1, limit = 20 } = req.query;
@@ -17,7 +18,7 @@ const getProducts = async (req, res, next) => {
   }
 };
 
-// GET /api/products/:id
+// ─── GET /api/products/:id ────────────────────────────────────────────────────
 const getProduct = async (req, res, next) => {
   try {
     const product = await ProductModel.findById(req.params.id);
@@ -28,7 +29,82 @@ const getProduct = async (req, res, next) => {
   }
 };
 
-// POST /api/admin/products  [Admin only]
+// ─── GET /api/products/:id/reviews ───────────────────────────────────────────
+// FIX: This endpoint was querying `product_reviews` directly with no try/catch
+// (or the table simply didn't exist in production). Either way, Postgres throws
+// error code 42P01 ("relation does not exist"), which went unhandled, caused an
+// unhandledRejection, and crashed the Railway container → SIGTERM → 503.
+//
+// Fix strategy — OPTION 1 (safe degradation):
+//   Catch error code 42P01 and return an empty array so the frontend renders
+//   "No reviews yet" instead of crashing the server.
+//   The SQL to create the table properly is provided in schema.sql.
+const getProductReviews = async (req, res, next) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (isNaN(productId)) throw createError(400, 'Invalid product id.');
+
+    const result = await db.query(
+      `SELECT
+         r.id,
+         r.product_id,
+         r.user_id,
+         u.name  AS user_name,
+         r.rating,
+         r.comment,
+         r.created_at
+       FROM product_reviews r
+       LEFT JOIN users u ON u.id = r.user_id
+       WHERE r.product_id = $1
+       ORDER BY r.created_at DESC`,
+      [productId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    // 42P01 = undefined_table (product_reviews doesn't exist yet)
+    if (err.code === '42P01') {
+      console.warn('[getProductReviews] product_reviews table missing — returning empty array');
+      return res.json([]);
+    }
+    next(err);
+  }
+};
+
+// ─── POST /api/products/:id/reviews  (authenticated users) ───────────────────
+const createProductReview = async (req, res, next) => {
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (isNaN(productId)) throw createError(400, 'Invalid product id.');
+
+    const { rating, comment } = req.body;
+    if (!rating || rating < 1 || rating > 5)
+      throw createError(400, 'Rating must be between 1 and 5.');
+
+    const result = await db.query(
+      `INSERT INTO product_reviews (product_id, user_id, rating, comment, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING *`,
+      [productId, req.user.id, rating, comment || null]
+    );
+
+    res.status(201).json({ message: 'Review submitted.', review: result.rows[0] });
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('[createProductReview] product_reviews table missing');
+      return res.status(503).json({
+        message: 'Reviews are temporarily unavailable. Please try again later.',
+      });
+    }
+    // 23505 = unique_violation (user already reviewed this product)
+    if (err.code === '23505') {
+      return next(createError(409, 'You have already reviewed this product.'));
+    }
+    next(err);
+  }
+};
+
+// ─── POST /api/admin/products  [Admin only] ───────────────────────────────────
 const createProduct = async (req, res, next) => {
   try {
     const {
@@ -57,7 +133,7 @@ const createProduct = async (req, res, next) => {
   }
 };
 
-// PUT /api/admin/products/:id  [Admin only]
+// ─── PUT /api/admin/products/:id  [Admin only] ────────────────────────────────
 const updateProduct = async (req, res, next) => {
   try {
     const product = await ProductModel.update(req.params.id, req.body);
@@ -68,7 +144,7 @@ const updateProduct = async (req, res, next) => {
   }
 };
 
-// DELETE /api/admin/products/:id  [Admin only]
+// ─── DELETE /api/admin/products/:id  [Admin only] ─────────────────────────────
 const deleteProduct = async (req, res, next) => {
   try {
     const deleted = await ProductModel.delete(req.params.id);
@@ -79,4 +155,12 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
-module.exports = { getProducts, getProduct, createProduct, updateProduct, deleteProduct };
+module.exports = {
+  getProducts,
+  getProduct,
+  getProductReviews,
+  createProductReview,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+};
