@@ -1,9 +1,9 @@
 const router = require('express').Router();
-const { 
+const {
   createOrder,
   createGuestOrder,
-  getMyOrders, 
-  getMyOrder, 
+  getMyOrders,
+  getMyOrder,
   updateOrderStatus,
   cancelOrder,
   midtransNotification,
@@ -11,27 +11,36 @@ const {
 } = require('../controllers/orderController');
 const { authenticate } = require('../middleware/auth');
 
-// POST /api/orders/guest  — public, no login required
-router.post('/guest', createGuestOrder);
+// ── Public routes (NO authentication required) ────────────────────────────────
 
+// Midtrans webhook
 router.post('/midtrans/notification', midtransNotification);
 
+// Guest checkout — create order
+router.post('/guest', createGuestOrder);
+
+// Guest order lookup — MUST be declared before router.use(authenticate)
+// FIX: This route was already above authenticate in the original file, which
+// is correct. Keeping it explicit here to make the intent clear and ensure
+// no future refactor accidentally moves it below the auth wall.
 router.get('/guest/:id', getGuestOrder);
 
+// ── Authenticated routes ───────────────────────────────────────────────────────
 router.use(authenticate);
 
-// POST /api/orders  — place order from cart
+// Place order from cart
 router.post('/', createOrder);
 
-// GET /api/orders  — all my orders
+// List all my orders
 router.get('/', getMyOrders);
 
+// Update order status (user marks as paid)
 router.patch('/:id/status', updateOrderStatus);
 
-// PATCH /api/orders/:id/cancel  — cancel a pending order
+// Cancel a pending order
 router.patch('/:id/cancel', cancelOrder);
 
-// GET /api/orders/:id  — single order (own only)
+// Get single order (own only) — must be LAST among /:id patterns
 router.get('/:id', getMyOrder);
 
 module.exports = router;
