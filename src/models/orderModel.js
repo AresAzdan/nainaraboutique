@@ -28,7 +28,7 @@ const OrderModel = {
        FROM orders o
        JOIN users u ON o.user_id = u.id
        WHERE o.id = $1`,
-      [id]
+      [orderid]
     );
     return rows[0] || null;
   },
