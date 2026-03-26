@@ -67,6 +67,12 @@ app.post('/api/promo-codes/validate', authenticate, validatePromoCode);
 // ─── Public Homepage Settings ────────────────────────────────────────────────
 app.get('/api/homepage', getHomepage);
 
+const cors = require('cors');
+
+app.use(cors({
+  origin: ['https://nainaraboutique.vercel.app'],
+  credentials: true
+}));
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth',       authRoutes);
