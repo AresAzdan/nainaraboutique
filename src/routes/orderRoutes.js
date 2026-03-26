@@ -15,6 +15,8 @@ router.post('/guest', createGuestOrder);
 
 router.post('/midtrans/notification', midtransNotification);
 
+router.get('/guest/:id', getGuestOrder);
+
 router.use(authenticate);
 
 // POST /api/orders  — place order from cart
