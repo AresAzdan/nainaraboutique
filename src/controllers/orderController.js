@@ -117,7 +117,6 @@ const createOrder = async (req, res, next) => {
 
     const orderItems2 = await OrderModel.getOrderItems(order.id);
 
-    // Minta token ke Midtrans
     const parameter = {
       transaction_details: {
         order_id: `NAINARA-USER-${order.id}-${Date.now()}`,
@@ -134,7 +133,7 @@ const createOrder = async (req, res, next) => {
     res.status(201).json({
       message: 'Order placed successfully.',
       order: { ...order, items: orderItems2 },
-      snap_token: transaction.token // <- Token Midtrans dikirim ke frontend
+      snap_token: transaction.token
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -382,10 +381,12 @@ const createGuestOrder = async (req, res, next) => {
 
     const orderItemsResult = await client.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
 
-    // Minta token ke Midtrans buat Guest
+    // Build Midtrans order_id that embeds the DB id so we can recover it later
+    const midtransOrderId = `NAINARA-GUEST-${order.id}-${Date.now()}`;
+
     const parameter = {
       transaction_details: {
-        order_id: `NAINARA-GUEST-${order.id}-${Date.now()}`,
+        order_id: midtransOrderId,
         gross_amount: Math.round(totalAmountVal)
       },
       customer_details: {
@@ -404,7 +405,9 @@ const createGuestOrder = async (req, res, next) => {
     res.status(201).json({
       message: 'Guest order placed successfully.',
       order: { ...order, items: orderItemsResult.rows },
-      snap_token: transaction.token // <- Token Midtrans dikirim ke frontend
+      snap_token: transaction.token,
+      // Return the numeric DB id so the frontend can redirect with the correct id
+      order_db_id: order.id,
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -424,7 +427,6 @@ const midtransNotification = async (req, res) => {
     console.log("Order ID:", order_id);
     console.log("Status:", transaction_status);
 
-    // 🔥 UPDATE STATUS DI DATABASE
     if (transaction_status === 'settlement') {
       await OrderModel.updateStatus(order_id, 'paid');
     }
@@ -444,9 +446,44 @@ const midtransNotification = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/orders/guest/:id
+ *
+ * The :id parameter may be either:
+ *   1. A plain numeric DB id:           "42"
+ *   2. A Midtrans composite order_id:   "NAINARA-GUEST-42-1774518813848"
+ *                                        or "NAINARA-1774518813848"
+ *
+ * We extract the numeric DB id in all cases so we never pass a non-integer
+ * string to OrderModel.findById, which would cause a PostgreSQL cast error
+ * and result in a 503 from Railway.
+ */
 const getGuestOrder = async (req, res) => {
   try {
-    const order = await OrderModel.findById(req.params.id);
+    const raw = req.params.id;
+
+    // Attempt to extract a numeric DB id from a Midtrans composite string.
+    // Patterns handled:
+    //   NAINARA-GUEST-{dbId}-{timestamp}  → capture group 1 = dbId
+    //   NAINARA-USER-{dbId}-{timestamp}   → capture group 1 = dbId
+    //   NAINARA-{dbId}                    → capture group 1 = dbId (legacy / plain)
+    //   {dbId}                            → plain integer, used as-is
+    let dbId;
+    const compositeMatch = raw.match(/^NAINARA-(?:GUEST|USER)-(\d+)-\d+$/i);
+    const legacyMatch    = raw.match(/^NAINARA-(\d+)$/i);
+
+    if (compositeMatch) {
+      dbId = parseInt(compositeMatch[1], 10);
+    } else if (legacyMatch) {
+      dbId = parseInt(legacyMatch[1], 10);
+    } else if (/^\d+$/.test(raw)) {
+      dbId = parseInt(raw, 10);
+    } else {
+      // Cannot derive a numeric id — return 404 rather than crashing
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const order = await OrderModel.findById(dbId);
 
     if (!order) {
       return res.status(404).json({ error: "Order not found" });
