@@ -424,9 +424,22 @@ const midtransNotification = async (req, res) => {
     console.log("Order ID:", order_id);
     console.log("Status:", transaction_status);
 
+    // 🔥 UPDATE STATUS DI DATABASE
+    if (transaction_status === 'settlement') {
+      await OrderModel.updateStatus(order_id, 'paid');
+    }
+
+    if (transaction_status === 'pending') {
+      await OrderModel.updateStatus(order_id, 'pending');
+    }
+
+    if (['deny', 'cancel', 'expire'].includes(transaction_status)) {
+      await OrderModel.updateStatus(order_id, 'failed');
+    }
+
     res.status(200).json({ message: "OK" });
-  } catch (error) {
-    console.error("Notification error:", error);
+  } catch (err) {
+    console.error("Notification error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
