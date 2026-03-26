@@ -6,11 +6,14 @@ const {
   getMyOrder, 
   updateOrderStatus,
   cancelOrder,
+  midtransNotification,
 } = require('../controllers/orderController');
 const { authenticate } = require('../middleware/auth');
 
 // POST /api/orders/guest  — public, no login required
 router.post('/guest', createGuestOrder);
+
+router.post('/midtrans/notification', midtransNotification);
 
 router.use(authenticate);
 
