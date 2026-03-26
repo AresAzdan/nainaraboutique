@@ -440,5 +440,7 @@ module.exports = {
   updateOrderStatus,
   cancelOrder,
   midtransNotification,
-  adminGetOrder,// ⬅️ WAJIB ditambahkan
+  adminGetOrder,
+  getAllOrders,
+  adminUpdateOrderStatus,
 };
