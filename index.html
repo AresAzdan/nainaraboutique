@@ -4857,11 +4857,10 @@
                 // FIX 5: All async logic is inside a single try/catch block
                 //         Previously the bare fetch + throw were outside try/catch, crashing the whole app
                 try {
-                    // FIX 6: Use id from URL params (not this.data.lastOrderId) for a single, correct fetch
-                    const res = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/${id}`, {
+                    // Use the public guest endpoint — no authentication required
+                    const res = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`, {
                         headers: {
-                            'Content-Type': 'application/json',
-                            ...this.authHeaders()
+                            'Content-Type': 'application/json'
                         }
                     });
 
@@ -4874,8 +4873,9 @@
 
                     const order = data.order || data;
 
-                    // FIX 7: Status was compared against "pa" — corrected to the full string "paid"
-                    if (order.status !== "paid") {
+                    // Accept both "paid" and "pending" — Midtrans webhook may not have fired yet
+                    const acceptedStatuses = ["paid", "pending", "settlement", "capture"];
+                    if (!acceptedStatuses.includes(order.status)) {
                         this.navigateTo("orders");
                         return;
                     }
