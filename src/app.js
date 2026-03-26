@@ -15,37 +15,53 @@ const returnRoutes   = require('./routes/returnRoutes');
 const reviewRoutes   = require('./routes/reviewRoutes');
 
 const { handleNotification } = require('./controllers/paymentController');
-const { validatePromoCode } = require('./controllers/promoController');
-const { getHomepage } = require('./controllers/settingsController');
-const shippingRoutes = require('./routes/shippingRoutes');
-const { authenticate } = require('./middleware/auth');
-const { errorHandler } = require('./middleware/errorHandler');
+const { validatePromoCode }  = require('./controllers/promoController');
+const { getHomepage }        = require('./controllers/settingsController');
+const shippingRoutes         = require('./routes/shippingRoutes');
+const { authenticate }       = require('./middleware/auth');
+const { errorHandler }       = require('./middleware/errorHandler');
 
 const app = express();
 
-// ─── Global Middleware ────────────────────────────────────────────────────────
+// ─── CORS — registered FIRST, before every route and middleware ───────────────
+// WHY: cors() must run before any route handler so that:
+//   1. Pre-flight OPTIONS requests are answered immediately with the correct
+//      Access-Control-Allow-Origin header.
+//   2. If a downstream route crashes (503), the CORS header is already set,
+//      so the browser sees a 503 — not a confusing "CORS error".
+const ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'https://nainaraboutique.vercel.app',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    const allowed = [
-      'http://localhost:3000',
-      'https://nainaraboutique.vercel.app',
-      process.env.FRONTEND_URL,
-    ].filter(Boolean);
-    const isVercelPreview = /^https:\/\/nainaraboutique(-[a-z0-9-]+)?\.vercel\.app$/.test(origin);
-    if (allowed.includes(origin) || isVercelPreview) return callback(null, true);
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // server-to-server / Midtrans webhook
+    const isVercelPreview =
+      /^https:\/\/nainaraboutique(-[a-z0-9-]+)?\.vercel\.app$/.test(origin);
+    if (ALLOWED_ORIGINS.includes(origin) || isVercelPreview)
+      return callback(null, true);
     return callback(new Error('CORS blocked: ' + origin));
   },
-  credentials: true
-}));
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+
+// Explicitly handle pre-flight OPTIONS for every route.
+// Without this, a browser OPTIONS probe that hits a crashed route gets no
+// CORS header and the browser misreports the real error as a CORS failure.
+app.options('*', cors(corsOptions));
+
+// ─── Body Parsers ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
-// ─── Serve Uploaded Files ─────────────────────────────────────────────────────
+// ─── Static Files ─────────────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
-// ─── Request Logger (dev-friendly) ───────────────────────────────────────────
+// ─── Request Logger ───────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
   app.use((req, _res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -58,7 +74,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── Public Webhook ───────────────────────────────────────────────────────────
+// ─── Public Webhook (Midtrans) ────────────────────────────────────────────────
 app.post('/api/payments/notification', handleNotification);
 
 // ─── Public Promo Validation ─────────────────────────────────────────────────
@@ -79,7 +95,7 @@ app.use('/api/shipping',   shippingRoutes);
 app.use('/api/returns',    returnRoutes);
 app.use('/api',            reviewRoutes);
 
-// ─── 404 Handler ─────────────────────────────────────────────────────────────
+// ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {
   res.status(404).json({ message: 'Route not found.' });
 });
@@ -87,7 +103,19 @@ app.use((_req, res) => {
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Start Server ─────────────────────────────────────────────────────────────
+// ─── Process-level safety nets ────────────────────────────────────────────────
+// WHY: Without these, a single unhandled rejection (e.g. querying a missing
+// table like `product_reviews`) kills the Node process on Railway → SIGTERM →
+// the *next* request gets a 503 with no CORS headers → browser reports "CORS
+// error" even though the real cause is a dead server.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection] Server kept alive:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] Server kept alive:', err);
+});
+
+// ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀  Server running on http://localhost:${PORT}`);
