@@ -7,6 +7,7 @@ const {
   updateOrderStatus,
   cancelOrder,
   midtransNotification,
+  getGuestOrder,
 } = require('../controllers/orderController');
 const { authenticate } = require('../middleware/auth');
 
