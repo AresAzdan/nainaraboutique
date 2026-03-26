@@ -23,7 +23,7 @@ router.post('/', createOrder);
 // GET /api/orders  — all my orders
 router.get('/', getMyOrders);
 
-router.patch('/:id/status', authenticate, updateOrderStatus);
+router.patch('/:id/status', updateOrderStatus);
 
 // PATCH /api/orders/:id/cancel  — cancel a pending order
 router.patch('/:id/cancel', cancelOrder);
