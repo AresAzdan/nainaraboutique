@@ -470,23 +470,9 @@ const midtransNotification = async (req, res) => {
 // this fix — would be an unhandled rejection that killed the process.
 const getGuestOrder = async (req, res) => {
   try {
-    const raw = req.params.id;
+    const orderId = req.params.id;
 
-    let dbId;
-    const compositeMatch = raw.match(/^NAINARA-(?:GUEST|USER)-(\d+)-\d+$/i);
-    const legacyMatch    = raw.match(/^NAINARA-(\d+)$/i);
-
-    if (compositeMatch) {
-      dbId = parseInt(compositeMatch[1], 10);
-    } else if (legacyMatch) {
-      dbId = parseInt(legacyMatch[1], 10);
-    } else if (/^\d+$/.test(raw)) {
-      dbId = parseInt(raw, 10);
-    } else {
-      return res.status(404).json({ error: 'Order not found.' });
-    }
-
-    const order = await OrderModel.findById(dbId);
+    const order = await OrderModel.findByOrderId(orderId);
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 
     const items = await OrderModel.getOrderItems(order.id);
