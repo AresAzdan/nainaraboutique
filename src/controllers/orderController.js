@@ -8,18 +8,20 @@ const { createError } = require('../middleware/errorHandler');
 const midtransClient = require('midtrans-client');
 const snap = new midtransClient.Snap({
   isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
-  serverKey: process.env.MIDTRANS_SERVER_KEY,
-  clientKey: process.env.MIDTRANS_CLIENT_KEY,
+  serverKey:    process.env.MIDTRANS_SERVER_KEY,
+  clientKey:    process.env.MIDTRANS_CLIENT_KEY,
 });
 
-const VALID_STATUSES = ['pending', 'paid', 'processing', 'shipped', 'completed', 'cancelled', 'return_requested', 'returned'];
+const VALID_STATUSES = [
+  'pending', 'paid', 'processing', 'shipped',
+  'completed', 'cancelled', 'return_requested', 'returned',
+];
 
-// Helper: lazily expire a pending order if older than 24 hours
+// ─── Helper: lazily expire a pending order older than 24 h ───────────────────
 const expireOrderIfStale = async (order, clientOrDb = db) => {
   if (order.status !== 'pending') return order;
   const diffHours = (new Date() - new Date(order.created_at)) / (1000 * 60 * 60);
   if (diffHours < 24) return order;
-
   const result = await clientOrDb.query(
     'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
     ['cancelled', order.id]
@@ -27,23 +29,23 @@ const expireOrderIfStale = async (order, clientOrDb = db) => {
   return result.rows[0];
 };
 
-// POST /api/orders  — create order from current cart
+// ─── POST /api/orders  — create order from current cart ──────────────────────
 const createOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
     const {
-      shipping_cost = 0,
-      discount_amount = 0,
-      promo_code = null,
-      name = null,
-      phone = null,
-      address = '',
-      province = '',
-      city = '',
-      district = '',
-      postal_code = '',
-      courier = '',
-      shipping_service = ''
+      shipping_cost    = 0,
+      discount_amount  = 0,
+      promo_code       = null,
+      name             = null,
+      phone            = null,
+      address          = '',
+      province         = '',
+      city             = '',
+      district         = '',
+      postal_code      = '',
+      courier          = '',
+      shipping_service = '',
     } = req.body;
 
     const existingPending = await client.query(
@@ -78,38 +80,45 @@ const createOrder = async (req, res, next) => {
       });
     }
 
-    const discountVal = Math.min(parseFloat(discount_amount) || 0, subtotal);
-    const shippingVal = parseFloat(shipping_cost) || 0;
-    const totalAmount = Math.max(0, subtotal - discountVal + shippingVal);
-
-    const fullAddress = [address, district, city, province, postal_code].filter(Boolean).join(', ');
+    const discountVal   = Math.min(parseFloat(discount_amount) || 0, subtotal);
+    const shippingVal   = parseFloat(shipping_cost) || 0;
+    const totalAmount   = Math.max(0, subtotal - discountVal + shippingVal);
+    const fullAddress   = [address, district, city, province, postal_code].filter(Boolean).join(', ');
     const shippingMethod = [courier, shipping_service].filter(Boolean).join(' - ');
 
     const order = await OrderModel.create(
       {
-        userId: req.user.id,
+        userId:          req.user.id,
         totalAmount,
-        items: orderItems,
-        shippingCost: shippingVal,
-        discountAmount: discountVal,
-        promoCode: promo_code || null,
+        items:           orderItems,
+        shippingCost:    shippingVal,
+        discountAmount:  discountVal,
+        promoCode:       promo_code || null,
         shippingAddress: fullAddress || null,
-        shippingMethod: shippingMethod || null,
-        phone: phone || null,
-        recipientName: name || null
+        shippingMethod:  shippingMethod || null,
+        phone:           phone || null,
+        recipientName:   name  || null,
       },
       client
     );
 
     if (promo_code) {
       try {
-        const { redeemPromoCode } = require('./promoController');
-        const promoResult = await client.query('SELECT id FROM promo_codes WHERE code = $1', [promo_code.toUpperCase()]);
+        const promoResult = await client.query(
+          'SELECT id FROM promo_codes WHERE code = $1',
+          [promo_code.toUpperCase()]
+        );
         if (promoResult.rows[0]) {
-          await client.query('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = $1', [promoResult.rows[0].id]);
-          await client.query('INSERT INTO promo_code_uses (promo_id, user_id) VALUES ($1, $2)', [promoResult.rows[0].id, req.user.id]);
+          await client.query(
+            'UPDATE promo_codes SET used_count = used_count + 1 WHERE id = $1',
+            [promoResult.rows[0].id]
+          );
+          await client.query(
+            'INSERT INTO promo_code_uses (promo_id, user_id) VALUES ($1, $2)',
+            [promoResult.rows[0].id, req.user.id]
+          );
         }
-      } catch (e) { }
+      } catch (_e) { /* promo failure is non-fatal */ }
     }
 
     await CartModel.clearCart(cart_id, client);
@@ -119,40 +128,38 @@ const createOrder = async (req, res, next) => {
 
     const parameter = {
       transaction_details: {
-        order_id: `NAINARA-USER-${order.id}-${Date.now()}`,
-        gross_amount: Math.round(totalAmount)
+        order_id:     `NAINARA-USER-${order.id}-${Date.now()}`,
+        gross_amount: Math.round(totalAmount),
       },
       customer_details: {
-        first_name: req.user.name || name || 'User',
-        email: req.user.email || 'user@example.com',
-        phone: phone || req.user.phone || '08000000000'
-      }
+        first_name: req.user.name  || name  || 'User',
+        email:      req.user.email || 'user@example.com',
+        phone:      phone || req.user.phone  || '08000000000',
+      },
     };
     const transaction = await snap.createTransaction(parameter);
 
     res.status(201).json({
-      message: 'Order placed successfully.',
-      order: { ...order, items: orderItems2 },
-      snap_token: transaction.token
+      message:    'Order placed successfully.',
+      order:      { ...order, items: orderItems2 },
+      snap_token: transaction.token,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
 };
 
+// ─── GET /api/orders  — all orders for the authenticated user ─────────────────
 const getMyOrders = async (req, res, next) => {
   try {
-    const orders = await OrderModel.findByUserId(req.user.id);
+    const orders   = await OrderModel.findByUserId(req.user.id);
     const detailed = await Promise.all(
       orders.map(async (order) => {
         const maybeExpired = await expireOrderIfStale(order);
-        return {
-          ...maybeExpired,
-          items: await OrderModel.getOrderItems(maybeExpired.id),
-        };
+        return { ...maybeExpired, items: await OrderModel.getOrderItems(maybeExpired.id) };
       })
     );
     res.json(detailed);
@@ -161,13 +168,13 @@ const getMyOrders = async (req, res, next) => {
   }
 };
 
+// ─── GET /api/orders/:id  — single order (own only) ──────────────────────────
 const getMyOrder = async (req, res, next) => {
   try {
     let order = await OrderModel.findById(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized access' });
+    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized access.' });
     order = await expireOrderIfStale(order);
-    if (req.user.role !== 'admin' && order.user_id !== req.user.id) throw createError(403, 'Access denied.');
     const items = await OrderModel.getOrderItems(order.id);
     res.json({ ...order, items });
   } catch (err) {
@@ -175,6 +182,7 @@ const getMyOrder = async (req, res, next) => {
   }
 };
 
+// ─── GET /api/admin/orders  — all orders (admin) ─────────────────────────────
 const getAllOrders = async (req, res, next) => {
   try {
     const { page = 1, limit = 20 } = req.query;
@@ -185,6 +193,7 @@ const getAllOrders = async (req, res, next) => {
   }
 };
 
+// ─── PATCH /api/orders/:id/status  — mark as paid (user) ─────────────────────
 const updateOrderStatus = async (req, res, next) => {
   const client = await db.connect();
   try {
@@ -193,7 +202,8 @@ const updateOrderStatus = async (req, res, next) => {
 
     let order = await OrderModel.findById(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized access' });
+    if (order.user_id !== req.user.id)
+      return res.status(403).json({ message: 'Unauthorized access.' });
 
     order = await expireOrderIfStale(order, client);
 
@@ -205,7 +215,8 @@ const updateOrderStatus = async (req, res, next) => {
     const items = await OrderModel.getOrderItems(order.id);
     for (const item of items) {
       const result = await ProductModel.deductStock(item.product_id, item.quantity, client);
-      if (!result) throw createError(409, `Insufficient stock for product ID ${item.product_id}. Cannot mark as paid.`);
+      if (!result)
+        throw createError(409, `Insufficient stock for product ID ${item.product_id}. Cannot mark as paid.`);
     }
 
     const updated = await client.query(
@@ -216,22 +227,25 @@ const updateOrderStatus = async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ message: `Order status updated to "${status}".`, order: updated.rows[0] });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
 };
 
+// ─── PATCH /api/orders/:id/cancel  — cancel a pending/paid/processing order ──
 const cancelOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized access' });
+    if (order.user_id !== req.user.id)
+      return res.status(403).json({ message: 'Unauthorized access.' });
 
     const cancellable = ['pending', 'paid', 'processing'];
-    if (!cancellable.includes(order.status)) throw createError(400, 'Only orders that have not been shipped can be cancelled.');
+    if (!cancellable.includes(order.status))
+      throw createError(400, 'Only orders that have not been shipped can be cancelled.');
 
     await client.query('BEGIN');
 
@@ -253,18 +267,31 @@ const cancelOrder = async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ message: 'Order cancelled successfully.', order: result.rows[0] });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
 };
 
+// ─── GET /api/admin/orders/:id  — single order (admin) ───────────────────────
+const adminGetOrder = async (req, res, next) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+    if (!order) throw createError(404, 'Order not found.');
+    const items = await OrderModel.getOrderItems(order.id);
+    res.json({ ...order, items });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── PATCH /api/admin/orders/:id/status  — admin status update ───────────────
 const adminUpdateOrderStatus = async (req, res, next) => {
   const client = await db.connect();
   try {
     const { status, tracking_number, tracking_courier } = req.body;
-    if (!VALID_STATUSES.includes(status)) throw createError(400, `Invalid status.`);
+    if (!VALID_STATUSES.includes(status)) throw createError(400, 'Invalid status.');
 
     let order = await OrderModel.findById(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
@@ -272,7 +299,7 @@ const adminUpdateOrderStatus = async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    if (status === 'paid' && !['paid','shipped','completed'].includes(order.status)) {
+    if (status === 'paid' && !['paid', 'shipped', 'completed'].includes(order.status)) {
       const items = await OrderModel.getOrderItems(order.id);
       for (const item of items) {
         const ok = await ProductModel.deductStock(item.product_id, item.quantity, client);
@@ -288,7 +315,11 @@ const adminUpdateOrderStatus = async (req, res, next) => {
       );
     } else if (status === 'shipped') {
       updated = await client.query(
-        'UPDATE orders SET status = $1, tracking_number = COALESCE($2, tracking_number), tracking_courier = COALESCE($3, tracking_courier) WHERE id = $4 RETURNING *',
+        `UPDATE orders
+         SET status = $1,
+             tracking_number  = COALESCE($2, tracking_number),
+             tracking_courier = COALESCE($3, tracking_courier)
+         WHERE id = $4 RETURNING *`,
         [status, tracking_number || null, tracking_courier || null, req.params.id]
       );
     } else {
@@ -301,44 +332,33 @@ const adminUpdateOrderStatus = async (req, res, next) => {
     await client.query('COMMIT');
     res.json({ message: `Order updated to "${status}".`, order: updated.rows[0] });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
 };
 
-const adminGetOrder = async (req, res, next) => {
-  try {
-    const order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    const items = await OrderModel.getOrderItems(order.id);
-    res.json({ ...order, items });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// POST /api/orders/guest  — create order without authentication (guest checkout)
+// ─── POST /api/orders/guest  — guest checkout (no auth) ──────────────────────
 const createGuestOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
     const {
-      name = null,
-      phone = null,
-      email = null,
-      address = '',
-      province = '',
-      city = '',
-      district = '',
-      postal_code = '',
-      courier = 'free',
+      name             = null,
+      phone            = null,
+      email            = null,
+      address          = '',
+      province         = '',
+      city             = '',
+      district         = '',
+      postal_code      = '',
+      courier          = 'free',
       shipping_service = 'Free Shipping',
-      shipping_cost = 0,
-      discount_amount = 0,
-      promo_code = null,
+      shipping_cost    = 0,
+      discount_amount  = 0,
+      promo_code       = null,
       total_amount,
-      items = [],
+      items            = [],
     } = req.body;
 
     if (!items || items.length === 0) throw createError(400, 'No items provided.');
@@ -346,18 +366,17 @@ const createGuestOrder = async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    const fullAddress = [address, district, city, province, postal_code].filter(Boolean).join(', ');
+    const fullAddress    = [address, district, city, province, postal_code].filter(Boolean).join(', ');
     const shippingMethod = [courier, shipping_service].filter(Boolean).join(' - ');
-
-    const discountVal = parseFloat(discount_amount) || 0;
-    const shippingVal = parseFloat(shipping_cost) || 0;
+    const discountVal    = parseFloat(discount_amount) || 0;
+    const shippingVal    = parseFloat(shipping_cost)   || 0;
     const totalAmountVal = parseFloat(total_amount);
 
     const orderResult = await client.query(
       `INSERT INTO orders
         (user_id, total_amount, shipping_cost, discount_amount, promo_code,
          shipping_address, shipping_method, phone, recipient_name, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending', NOW())
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',NOW())
        RETURNING *`,
       [
         null, totalAmountVal, shippingVal, discountVal, promo_code || null,
@@ -369,105 +388,90 @@ const createGuestOrder = async (req, res, next) => {
     for (const item of items) {
       await client.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+         VALUES ($1,$2,$3,$4,$5,$6)`,
         [
-          order.id, item.product_id || null, item.quantity || 1, parseFloat(item.price) || 0,
-          item.product_name || item.name || 'Product', item.size || null,
+          order.id,
+          item.product_id   || null,
+          item.quantity     || 1,
+          parseFloat(item.price) || 0,
+          item.product_name || item.name || 'Product',
+          item.size         || null,
         ]
       );
     }
 
     await client.query('COMMIT');
 
-    const orderItemsResult = await client.query('SELECT * FROM order_items WHERE order_id = $1', [order.id]);
+    const orderItemsResult = await client.query(
+      'SELECT * FROM order_items WHERE order_id = $1',
+      [order.id]
+    );
 
-    // Build Midtrans order_id that embeds the DB id so we can recover it later
     const midtransOrderId = `NAINARA-GUEST-${order.id}-${Date.now()}`;
-
     const parameter = {
       transaction_details: {
-        order_id: midtransOrderId,
-        gross_amount: Math.round(totalAmountVal)
+        order_id:     midtransOrderId,
+        gross_amount: Math.round(totalAmountVal),
       },
       customer_details: {
-        first_name: name || 'Guest',
-        email: email || 'guest@example.com',
-        phone: phone || '08000000000'
-      }
+        first_name: name  || 'Guest',
+        email:      email || 'guest@example.com',
+        phone:      phone || '08000000000',
+      },
     };
-    console.log("=== DEBUG MIDTRANS ===");
-    console.log("IS PROD:", process.env.MIDTRANS_IS_PRODUCTION);
-    console.log("SERVER KEY:", process.env.MIDTRANS_SERVER_KEY);
-    console.log("======================");
-    console.log('MODE:', snap.apiConfig.isProduction, 'KUNCI:', snap.apiConfig.serverKey);
+
     const transaction = await snap.createTransaction(parameter);
 
     res.status(201).json({
-      message: 'Guest order placed successfully.',
-      order: { ...order, items: orderItemsResult.rows },
-      snap_token: transaction.token,
-      // Return the numeric DB id so the frontend can redirect with the correct id
-      order_db_id: order.id,
+      message:      'Guest order placed successfully.',
+      order:        { ...order, items: orderItemsResult.rows },
+      snap_token:   transaction.token,
+      order_db_id:  order.id,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
     client.release();
   }
 };
 
+// ─── POST /api/orders/midtrans/notification  — Midtrans webhook ───────────────
 const midtransNotification = async (req, res) => {
   try {
-    console.log("=== MIDTRANS NOTIFICATION ===");
-    console.log(req.body);
-
     const { order_id, transaction_status } = req.body;
-
-    console.log("Order ID:", order_id);
-    console.log("Status:", transaction_status);
+    console.log('[midtransNotification] order_id:', order_id, 'status:', transaction_status);
 
     if (transaction_status === 'settlement') {
       await OrderModel.updateStatus(order_id, 'paid');
-    }
-
-    if (transaction_status === 'pending') {
+    } else if (transaction_status === 'pending') {
       await OrderModel.updateStatus(order_id, 'pending');
+    } else if (['deny', 'cancel', 'expire'].includes(transaction_status)) {
+      await OrderModel.updateStatus(order_id, 'cancelled');
     }
 
-    if (['deny', 'cancel', 'expire'].includes(transaction_status)) {
-      await OrderModel.updateStatus(order_id, 'failed');
-    }
-
-    res.status(200).json({ message: "OK" });
+    res.status(200).json({ message: 'OK' });
   } catch (err) {
-    console.error("Notification error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[midtransNotification] error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-/**
- * GET /api/orders/guest/:id
- *
- * The :id parameter may be either:
- *   1. A plain numeric DB id:           "42"
- *   2. A Midtrans composite order_id:   "NAINARA-GUEST-42-1774518813848"
- *                                        or "NAINARA-1774518813848"
- *
- * We extract the numeric DB id in all cases so we never pass a non-integer
- * string to OrderModel.findById, which would cause a PostgreSQL cast error
- * and result in a 503 from Railway.
- */
+// ─── GET /api/orders/guest/:id  — retrieve guest order (NO AUTH REQUIRED) ─────
+//
+// The :id parameter may be any of:
+//   "42"                              → plain numeric DB id
+//   "NAINARA-GUEST-42-1774518813848"  → Midtrans composite id
+//   "NAINARA-USER-42-1774518813848"   → Midtrans composite id (user order)
+//   "NAINARA-42"                      → legacy format
+//
+// We always extract the numeric DB id before querying so Postgres never
+// receives a non-integer string, which would throw a cast error and — before
+// this fix — would be an unhandled rejection that killed the process.
 const getGuestOrder = async (req, res) => {
   try {
     const raw = req.params.id;
 
-    // Attempt to extract a numeric DB id from a Midtrans composite string.
-    // Patterns handled:
-    //   NAINARA-GUEST-{dbId}-{timestamp}  → capture group 1 = dbId
-    //   NAINARA-USER-{dbId}-{timestamp}   → capture group 1 = dbId
-    //   NAINARA-{dbId}                    → capture group 1 = dbId (legacy / plain)
-    //   {dbId}                            → plain integer, used as-is
     let dbId;
     const compositeMatch = raw.match(/^NAINARA-(?:GUEST|USER)-(\d+)-\d+$/i);
     const legacyMatch    = raw.match(/^NAINARA-(\d+)$/i);
@@ -479,22 +483,17 @@ const getGuestOrder = async (req, res) => {
     } else if (/^\d+$/.test(raw)) {
       dbId = parseInt(raw, 10);
     } else {
-      // Cannot derive a numeric id — return 404 rather than crashing
-      return res.status(404).json({ error: "Order not found" });
+      return res.status(404).json({ error: 'Order not found.' });
     }
 
     const order = await OrderModel.findById(dbId);
-
-    if (!order) {
-      return res.status(404).json({ error: "Order not found" });
-    }
+    if (!order) return res.status(404).json({ error: 'Order not found.' });
 
     const items = await OrderModel.getOrderItems(order.id);
-
     res.json({ ...order, items });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[getGuestOrder] error:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 };
 
@@ -503,11 +502,11 @@ module.exports = {
   createGuestOrder,
   getMyOrders,
   getMyOrder,
+  getAllOrders,
   updateOrderStatus,
   cancelOrder,
   midtransNotification,
   adminGetOrder,
-  getAllOrders,
-  getGuestOrder,
   adminUpdateOrderStatus,
+  getGuestOrder,
 };
