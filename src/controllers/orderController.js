@@ -238,7 +238,7 @@ const updateOrderStatus = async (req, res, next) => {
 const cancelOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
-    const order = await OrderModel.findById(req.params.id);
+    const order = await OrderModel.findByOrderId(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
     if (order.user_id !== req.user.id)
       return res.status(403).json({ message: 'Unauthorized access.' });
