@@ -444,6 +444,23 @@ const midtransNotification = async (req, res) => {
   }
 };
 
+const getGuestOrder = async (req, res) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const items = await OrderModel.getOrderItems(order.id);
+
+    res.json({ ...order, items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 module.exports = {
   createOrder,
   createGuestOrder,
@@ -454,5 +471,6 @@ module.exports = {
   midtransNotification,
   adminGetOrder,
   getAllOrders,
+  getGuestOrder,
   adminUpdateOrderStatus,
 };
