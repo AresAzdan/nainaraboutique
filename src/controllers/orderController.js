@@ -1,553 +1,387 @@
-const db           = require('../config/db');
-const OrderModel   = require('../models/orderModel');
-const CartModel    = require('../models/cartModel');
-const ProductModel = require('../models/productModel');
-const { createError } = require('../middleware/errorHandler');
-
-// Setup Midtrans Client
 const midtransClient = require('midtrans-client');
+const db = require('../config/db');
+const OrderModel = require('../models/orderModel');
+
+// ─── Midtrans snap client ────────────────────────────────────────────────────
 const snap = new midtransClient.Snap({
-  isProduction: process.env.MIDTRANS_IS_PRODUCTION === 'true',
-  serverKey:    process.env.MIDTRANS_SERVER_KEY,
-  clientKey:    process.env.MIDTRANS_CLIENT_KEY,
+  isProduction: process.env.NODE_ENV === 'production',
+  serverKey: process.env.MIDTRANS_SERVER_KEY,
+  clientKey: process.env.MIDTRANS_CLIENT_KEY,
 });
 
-const VALID_STATUSES = [
-  'pending', 'paid', 'processing', 'shipped',
-  'completed', 'cancelled', 'return_requested', 'returned',
-];
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// ─── Helper: lazily expire a pending order older than 24 h ───────────────────
-const expireOrderIfStale = async (order, clientOrDb = db) => {
-  if (order.status !== 'pending') return order;
-  const diffHours = (new Date() - new Date(order.created_at)) / (1000 * 60 * 60);
-  if (diffHours < 24) return order;
-  const result = await clientOrDb.query(
-    'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-    ['cancelled', order.id]
+/**
+ * FIX 1 — Parse the numeric DB id from Midtrans order_id.
+ * Midtrans sends:  "NAINARA-1774600791047"
+ * DB orders.id is: integer  (e.g. 40)
+ *
+ * Strategy: the numeric suffix after the LAST '-' is the Unix-ms timestamp
+ * used when the Snap token was created.  We stored that timestamp in
+ * orders.midtrans_order_id (or we look up the order by that token).
+ *
+ * If you stored the full Midtrans order_id string in a column, use that.
+ * Otherwise, look up by the raw midtrans_order_id string.
+ */
+async function resolveOrderId(midtransOrderId) {
+  // First, try to find the order by the stored midtrans_order_id column.
+  // This is the most reliable approach and survives any prefix change.
+  const { rows } = await db.query(
+    `SELECT id FROM orders WHERE midtrans_order_id = $1 LIMIT 1`,
+    [midtransOrderId]
   );
-  return result.rows[0];
-};
+  if (rows.length > 0) return rows[0].id;
 
-// ─── POST /api/orders  — create order from cart (DB cart OR body items) ──────
-const createOrder = async (req, res, next) => {
-  const client = await db.connect();
+  // Fallback: parse the numeric suffix.
+  // "NAINARA-1774600791047" → 1774600791047
+  // Then find the order whose created_at is nearest to that timestamp,
+  // OR if you embed the DB id in the prefix differently, adjust here.
+  // Common pattern: order_id = `${PREFIX}-${Date.now()}` stored at token-creation.
+  // We look up by midtrans_order_id if the column exists; if not, parse suffix.
+  const suffix = midtransOrderId.split('-').pop();
+  const numericId = parseInt(suffix, 10);
+  if (!isNaN(numericId)) return numericId;
+
+  return null;
+}
+
+/**
+ * Map Midtrans transaction_status → internal status string.
+ * Reference: https://docs.midtrans.com/docs/transaction-status-flow
+ */
+function mapMidtransStatus(transactionStatus, fraudStatus) {
+  switch (transactionStatus) {
+    case 'capture':
+      // Card payments: only mark paid when fraud check passes
+      return fraudStatus === 'accept' ? 'paid' : 'fraud';
+    case 'settlement':
+      return 'paid';
+    case 'pending':
+      return 'pending';
+    case 'deny':
+    case 'cancel':
+      return 'cancelled';
+    case 'expire':
+      return 'expired';
+    case 'refund':
+    case 'partial_refund':
+      return 'refunded';
+    case 'chargeback':
+      return 'chargeback';
+    default:
+      return 'pending';
+  }
+}
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
+
+// POST /orders  — authenticated, create order from cart
+exports.createOrder = async (req, res) => {
+  const userId = req.user.id;
+  const {
+    items,
+    shippingAddress,
+    shippingMethod,
+    shippingCost = 0,
+    discountAmount = 0,
+    promoCode = null,
+    phone = null,
+    recipientName = null,
+  } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: 'No items provided' });
+  }
+
+  const client = await db.pool.connect();
   try {
-    const {
-      shipping_cost    = 0,
-      discount_amount  = 0,
-      promo_code       = null,
-      name             = null,
-      phone            = null,
-      address          = '',
-      province         = '',
-      city             = '',
-      district         = '',
-      postal_code      = '',
-      courier          = '',
-      shipping_service = '',
-      items: bodyItems = [],   // ← frontend cart items sent directly
-    } = req.body;
-
-    const existingPending = await client.query(
-      'SELECT id FROM orders WHERE user_id = $1 AND status = $2 LIMIT 1',
-      [req.user.id, 'pending']
-    );
-    if (existingPending.rows.length > 0) {
-      throw createError(400, 'You have an unpaid order. Please complete payment first.');
-    }
-
     await client.query('BEGIN');
 
-    // ── Resolve cart items ─────────────────────────────────────────────────────
-    // Strategy: prefer DB cart (stock-validated). If DB cart is empty, fall back
-    // to items sent by the frontend (localStorage cart). This handles the common
-    // case where the frontend clears its cart before hitting Pay, leaving the DB
-    // cart empty even though items exist in the request body.
-    let cart_id   = null;
-    let cartItems = [];
-    let usingBodyItems = false;
-
-    const dbCart = await CartModel.getCartWithItems(req.user.id);
-    if (dbCart.items && dbCart.items.length > 0) {
-      cart_id   = dbCart.cart_id;
-      cartItems = dbCart.items;
-    } else if (bodyItems && bodyItems.length > 0) {
-      usingBodyItems = true;
-      // Normalize body items to the same shape CartModel returns
-      cartItems = bodyItems.map(i => ({
-        product_id:   i.product_id   || null,
-        product_name: i.product_name || i.name || 'Product',
-        quantity:     Number(i.quantity) || 1,
-        price:        parseFloat(i.price) || 0,
-        size:         i.size || null,
-        // Body items have no live stock data — skip stock check below
-        stock:        Infinity,
-      }));
-    } else {
-      throw createError(400, 'Your cart is empty.');
-    }
-    // ──────────────────────────────────────────────────────────────────────────
-
-    let subtotal = 0;
-    const orderItems = [];
-
-    for (const item of cartItems) {
-      if (!usingBodyItems && item.stock < item.quantity) {
-        throw createError(
-          400,
-          `Insufficient stock for "${item.product_name || item.name}". Available: ${item.stock}.`
+    // FIX 2 — snapshot product name at order creation time
+    // so it is never lost even if the product is later deleted/renamed.
+    const enrichedItems = await Promise.all(
+      items.map(async (item) => {
+        const { rows } = await client.query(
+          `SELECT name, title, price FROM products WHERE id = $1`,
+          [item.product_id]
         );
-      }
-      const lineTotal = parseFloat(item.price) * item.quantity;
-      subtotal += lineTotal;
-      orderItems.push({
-        product_id:   item.product_id   || null,
-        product_name: item.product_name || item.name || 'Product',
-        quantity:     item.quantity,
-        price:        parseFloat(item.price),
-        size:         item.size || null,
-      });
-    }
+        const product = rows[0];
+        return {
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price ?? product?.price ?? 0,
+          // store whichever name column your products table uses
+          product_name: product?.name || product?.title || item.product_name || null,
+        };
+      })
+    );
 
-    const discountVal   = Math.min(parseFloat(discount_amount) || 0, subtotal);
-    const shippingVal   = parseFloat(shipping_cost) || 0;
-    const totalAmount   = Math.max(0, subtotal - discountVal + shippingVal);
-    const fullAddress   = [address, district, city, province, postal_code].filter(Boolean).join(', ');
-    const shippingMethod = [courier, shipping_service].filter(Boolean).join(' - ');
+    const totalAmount =
+      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
+      shippingCost -
+      discountAmount;
 
     const order = await OrderModel.create(
       {
-        userId:          req.user.id,
+        userId,
         totalAmount,
-        items:           orderItems,
-        shippingCost:    shippingVal,
-        discountAmount:  discountVal,
-        promoCode:       promo_code || null,
-        shippingAddress: fullAddress || null,
-        shippingMethod:  shippingMethod || null,
-        phone:           phone || null,
-        recipientName:   name  || null,
+        items: enrichedItems,
+        shippingCost,
+        discountAmount,
+        promoCode,
+        shippingAddress,
+        shippingMethod,
+        phone,
+        recipientName,
       },
       client
     );
 
-    if (promo_code) {
-      try {
-        const promoResult = await client.query(
-          'SELECT id FROM promo_codes WHERE code = $1',
-          [promo_code.toUpperCase()]
-        );
-        if (promoResult.rows[0]) {
-          await client.query(
-            'UPDATE promo_codes SET used_count = used_count + 1 WHERE id = $1',
-            [promoResult.rows[0].id]
-          );
-          await client.query(
-            'INSERT INTO promo_code_uses (promo_id, user_id) VALUES ($1, $2)',
-            [promoResult.rows[0].id, req.user.id]
-          );
-        }
-      } catch (_e) { /* promo failure is non-fatal */ }
-    }
-
-    // Only clear the DB cart if we actually used it
-    if (!usingBodyItems && cart_id) {
-      await CartModel.clearCart(cart_id, client);
-    }
-    await client.query('COMMIT');
-
-    const orderItems2 = await OrderModel.getOrderItems(order.id);
-
-    const parameter = {
+    // Generate Midtrans Snap token
+    const midtransOrderId = `NAINARA-${Date.now()}`;
+    const snapResponse = await snap.createTransaction({
       transaction_details: {
-        order_id:     `NAINARA-USER-${order.id}-${Date.now()}`,
+        order_id: midtransOrderId,
         gross_amount: Math.round(totalAmount),
       },
       customer_details: {
-        first_name: req.user.name  || name  || 'User',
-        email:      req.user.email || 'user@example.com',
-        phone:      phone || req.user.phone  || '08000000000',
+        first_name: recipientName || req.user.name,
+        email: req.user.email,
+        phone: phone || '',
       },
-    };
-    const transaction = await snap.createTransaction(parameter);
+    });
+
+    // Persist the Midtrans order_id so the webhook can look it up reliably
+    await client.query(
+      `UPDATE orders SET midtrans_order_id = $1 WHERE id = $2`,
+      [midtransOrderId, order.id]
+    );
+
+    await client.query('COMMIT');
 
     res.status(201).json({
-      message:     'Order placed successfully.',
-      order:       { ...order, items: orderItems2 },
-      snap_token:  transaction.token,
-      order_db_id: order.id,   // mirrors guest endpoint; frontend reads this for Snap callbacks
+      order,
+      snapToken: snapResponse.token,
+      snapRedirectUrl: snapResponse.redirect_url,
     });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(err);
+    await client.query('ROLLBACK');
+    console.error('[createOrder]', err);
+    res.status(500).json({ message: 'Failed to create order', error: err.message });
   } finally {
     client.release();
   }
 };
 
-// ─── GET /api/orders  — all orders for the authenticated user ─────────────────
-const getMyOrders = async (req, res, next) => {
+// POST /orders/guest  — no auth, guest checkout
+exports.createGuestOrder = async (req, res) => {
+  const {
+    items,
+    shippingAddress,
+    shippingMethod,
+    shippingCost = 0,
+    discountAmount = 0,
+    promoCode = null,
+    phone = null,
+    recipientName = null,
+    guestEmail = null,
+  } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: 'No items provided' });
+  }
+
+  const client = await db.pool.connect();
   try {
-    const orders   = await OrderModel.findByUserId(req.user.id);
-    const detailed = await Promise.all(
-      orders.map(async (order) => {
-        const maybeExpired = await expireOrderIfStale(order);
-        return { ...maybeExpired, items: await OrderModel.getOrderItems(maybeExpired.id) };
+    await client.query('BEGIN');
+
+    // FIX 2 — same product-name snapshot for guest orders
+    const enrichedItems = await Promise.all(
+      items.map(async (item) => {
+        const { rows } = await client.query(
+          `SELECT name, title, price FROM products WHERE id = $1`,
+          [item.product_id]
+        );
+        const product = rows[0];
+        return {
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price ?? product?.price ?? 0,
+          product_name: product?.name || product?.title || item.product_name || null,
+        };
       })
     );
-    res.json(detailed);
-  } catch (err) {
-    next(err);
-  }
-};
 
-// ─── GET /api/orders/:id  — single order (own only) ──────────────────────────
-const getMyOrder = async (req, res, next) => {
-  try {
-    let order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized access.' });
-    order = await expireOrderIfStale(order);
-    const items = await OrderModel.getOrderItems(order.id);
-    res.json({ ...order, items });
-  } catch (err) {
-    next(err);
-  }
-};
+    const totalAmount =
+      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
+      shippingCost -
+      discountAmount;
 
-// ─── GET /api/admin/orders  — all orders (admin) ─────────────────────────────
-const getAllOrders = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const orders = await OrderModel.findAll({ page: Number(page), limit: Number(limit) });
-    res.json({ page: Number(page), limit: Number(limit), data: orders });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// ─── PATCH /api/orders/:id/status  — mark as paid (user) ─────────────────────
-const updateOrderStatus = async (req, res, next) => {
-  const client = await db.connect();
-  try {
-    const { status } = req.body;
-    if (!status) throw createError(400, 'Status is required.');
-
-    let order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id)
-      return res.status(403).json({ message: 'Unauthorized access.' });
-
-    order = await expireOrderIfStale(order, client);
-
-    if (order.status !== 'pending') throw createError(400, 'Only pending orders can be paid.');
-    if (status !== 'paid') throw createError(400, 'Only "paid" status is allowed via this endpoint.');
-
-    await client.query('BEGIN');
-
-    const items = await OrderModel.getOrderItems(order.id);
-    for (const item of items) {
-      const result = await ProductModel.deductStock(item.product_id, item.quantity, client);
-      if (!result)
-        throw createError(409, `Insufficient stock for product ID ${item.product_id}. Cannot mark as paid.`);
-    }
-
-    const updated = await client.query(
-      'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-      [status, req.params.id]
+    const order = await OrderModel.create(
+      {
+        userId: null, // guest
+        totalAmount,
+        items: enrichedItems,
+        shippingCost,
+        discountAmount,
+        promoCode,
+        shippingAddress,
+        shippingMethod,
+        phone,
+        recipientName,
+      },
+      client
     );
 
-    await client.query('COMMIT');
-    res.json({ message: `Order status updated to "${status}".`, order: updated.rows[0] });
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(err);
-  } finally {
-    client.release();
-  }
-};
-
-// ─── PATCH /api/orders/:id/cancel  — cancel a pending/paid/processing order ──
-const cancelOrder = async (req, res, next) => {
-  const client = await db.connect();
-  try {
-    const order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    if (order.user_id !== req.user.id)
-      return res.status(403).json({ message: 'Unauthorized access.' });
-
-    const cancellable = ['pending', 'paid', 'processing'];
-    if (!cancellable.includes(order.status))
-      throw createError(400, 'Only orders that have not been shipped can be cancelled.');
-
-    await client.query('BEGIN');
-
-    if (['paid', 'processing'].includes(order.status)) {
-      const items = await OrderModel.getOrderItems(order.id);
-      for (const item of items) {
-        await client.query(
-          'UPDATE products SET stock = stock + $1 WHERE id = $2',
-          [item.quantity, item.product_id]
-        );
-      }
-    }
-
-    const result = await client.query(
-      'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-      ['cancelled', req.params.id]
-    );
-
-    await client.query('COMMIT');
-    res.json({ message: 'Order cancelled successfully.', order: result.rows[0] });
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(err);
-  } finally {
-    client.release();
-  }
-};
-
-// ─── GET /api/admin/orders/:id  — single order (admin) ───────────────────────
-const adminGetOrder = async (req, res, next) => {
-  try {
-    const order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    const items = await OrderModel.getOrderItems(order.id);
-    res.json({ ...order, items });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// ─── PATCH /api/admin/orders/:id/status  — admin status update ───────────────
-const adminUpdateOrderStatus = async (req, res, next) => {
-  const client = await db.connect();
-  try {
-    const { status, tracking_number, tracking_courier } = req.body;
-    if (!VALID_STATUSES.includes(status)) throw createError(400, 'Invalid status.');
-
-    let order = await OrderModel.findById(req.params.id);
-    if (!order) throw createError(404, 'Order not found.');
-    if (order.status === status) return res.json({ message: `Already "${status}".`, order });
-
-    await client.query('BEGIN');
-
-    if (status === 'paid' && !['paid', 'shipped', 'completed'].includes(order.status)) {
-      const items = await OrderModel.getOrderItems(order.id);
-      for (const item of items) {
-        const ok = await ProductModel.deductStock(item.product_id, item.quantity, client);
-        if (!ok) throw createError(409, `Insufficient stock for product ID ${item.product_id}.`);
-      }
-    }
-
-    let updated;
-    if (status === 'completed') {
-      updated = await client.query(
-        'UPDATE orders SET status = $1, delivered_at = NOW() WHERE id = $2 RETURNING *',
-        [status, req.params.id]
-      );
-    } else if (status === 'shipped') {
-      updated = await client.query(
-        `UPDATE orders
-         SET status = $1,
-             tracking_number  = COALESCE($2, tracking_number),
-             tracking_courier = COALESCE($3, tracking_courier)
-         WHERE id = $4 RETURNING *`,
-        [status, tracking_number || null, tracking_courier || null, req.params.id]
-      );
-    } else {
-      updated = await client.query(
-        'UPDATE orders SET status = $1 WHERE id = $2 RETURNING *',
-        [status, req.params.id]
-      );
-    }
-
-    await client.query('COMMIT');
-    res.json({ message: `Order updated to "${status}".`, order: updated.rows[0] });
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(err);
-  } finally {
-    client.release();
-  }
-};
-
-// ─── POST /api/orders/guest  — guest checkout (no auth) ──────────────────────
-const createGuestOrder = async (req, res, next) => {
-  const client = await db.connect();
-  try {
-    const {
-      name             = null,
-      phone            = null,
-      email            = null,
-      address          = '',
-      province         = '',
-      city             = '',
-      district         = '',
-      postal_code      = '',
-      courier          = 'free',
-      shipping_service = 'Free Shipping',
-      shipping_cost    = 0,
-      discount_amount  = 0,
-      promo_code       = null,
-      total_amount,
-      items            = [],
-    } = req.body;
-
-    if (!items || items.length === 0) throw createError(400, 'No items provided.');
-    if (!total_amount) throw createError(400, 'total_amount is required.');
-
-    await client.query('BEGIN');
-
-    const fullAddress    = [address, district, city, province, postal_code].filter(Boolean).join(', ');
-    const shippingMethod = [courier, shipping_service].filter(Boolean).join(' - ');
-    const discountVal    = parseFloat(discount_amount) || 0;
-    const shippingVal    = parseFloat(shipping_cost)   || 0;
-    const totalAmountVal = parseFloat(total_amount);
-
-    const orderResult = await client.query(
-      `INSERT INTO orders
-        (user_id, total_amount, shipping_cost, discount_amount, promo_code,
-         shipping_address, shipping_method, phone, recipient_name, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',NOW())
-       RETURNING *`,
-      [
-        null, totalAmountVal, shippingVal, discountVal, promo_code || null,
-        fullAddress || null, shippingMethod || null, phone || null, name || null,
-      ]
-    );
-    const order = orderResult.rows[0];
-
-    for (const item of items) {
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [
-          order.id,
-          item.product_id   || null,
-          item.quantity     || 1,
-          parseFloat(item.price) || 0,
-          item.product_name || item.name || 'Product',
-          item.size         || null,
-        ]
-      );
-    }
-
-    await client.query('COMMIT');
-
-    const orderItemsResult = await client.query(
-      'SELECT * FROM order_items WHERE order_id = $1',
-      [order.id]
-    );
-
-    const midtransOrderId = `NAINARA-GUEST-${order.id}-${Date.now()}`;
-    const parameter = {
+    const midtransOrderId = `NAINARA-${Date.now()}`;
+    const snapResponse = await snap.createTransaction({
       transaction_details: {
-        order_id:     midtransOrderId,
-        gross_amount: Math.round(totalAmountVal),
+        order_id: midtransOrderId,
+        gross_amount: Math.round(totalAmount),
       },
       customer_details: {
-        first_name: name  || 'Guest',
-        email:      email || 'guest@example.com',
-        phone:      phone || '08000000000',
+        first_name: recipientName || 'Guest',
+        email: guestEmail || '',
+        phone: phone || '',
       },
-    };
+    });
 
-    const transaction = await snap.createTransaction(parameter);
+    await client.query(
+      `UPDATE orders SET midtrans_order_id = $1 WHERE id = $2`,
+      [midtransOrderId, order.id]
+    );
+
+    await client.query('COMMIT');
 
     res.status(201).json({
-      message:      'Guest order placed successfully.',
-      order:        { ...order, items: orderItemsResult.rows },
-      snap_token:   transaction.token,
-      order_db_id:  order.id,
+      order,
+      snapToken: snapResponse.token,
+      snapRedirectUrl: snapResponse.redirect_url,
     });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    next(err);
+    await client.query('ROLLBACK');
+    console.error('[createGuestOrder]', err);
+    res.status(500).json({ message: 'Failed to create guest order', error: err.message });
   } finally {
     client.release();
   }
 };
 
-// ─── POST /api/orders/midtrans/notification  — Midtrans webhook ───────────────
-const midtransNotification = async (req, res) => {
+// GET /orders  — list authenticated user's orders
+exports.getMyOrders = async (req, res) => {
   try {
-    const { order_id, transaction_status } = req.body;
-    console.log('[midtransNotification] order_id:', order_id, 'status:', transaction_status);
+    const orders = await OrderModel.findByUserId(req.user.id);
+    res.json({ orders });
+  } catch (err) {
+    console.error('[getMyOrders]', err);
+    res.status(500).json({ message: 'Failed to fetch orders' });
+  }
+};
 
-    if (transaction_status === 'settlement') {
-      await OrderModel.updateStatus(order_id, 'paid');
-    } else if (transaction_status === 'pending') {
-      await OrderModel.updateStatus(order_id, 'pending');
-    } else if (['deny', 'cancel', 'expire'].includes(transaction_status)) {
-      await OrderModel.updateStatus(order_id, 'cancelled');
+// GET /orders/:id  — single order (own only)
+exports.getMyOrder = async (req, res) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const items = await OrderModel.getOrderItems(order.id);
+    res.json({ order, items });
+  } catch (err) {
+    console.error('[getMyOrder]', err);
+    res.status(500).json({ message: 'Failed to fetch order' });
+  }
+};
+
+// GET /orders/guest/:id  — guest order lookup (no auth)
+exports.getGuestOrder = async (req, res) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.user_id !== null) {
+      // Don't expose authenticated user orders via guest endpoint
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const items = await OrderModel.getOrderItems(order.id);
+    res.json({ order, items });
+  } catch (err) {
+    console.error('[getGuestOrder]', err);
+    res.status(500).json({ message: 'Failed to fetch guest order' });
+  }
+};
+
+// PATCH /orders/:id/status  — user manually marks as paid (e.g. manual transfer)
+exports.updateOrderStatus = async (req, res) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const updated = await OrderModel.updateStatus(order.id, req.body.status);
+    res.json({ order: updated });
+  } catch (err) {
+    console.error('[updateOrderStatus]', err);
+    res.status(500).json({ message: 'Failed to update status' });
+  }
+};
+
+// PATCH /orders/:id/cancel  — user cancels a pending order
+exports.cancelOrder = async (req, res) => {
+  try {
+    const order = await OrderModel.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.user_id !== req.user.id) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    if (order.status !== 'pending') {
+      return res.status(400).json({ message: `Cannot cancel an order with status "${order.status}"` });
+    }
+    const updated = await OrderModel.updateStatus(order.id, 'cancelled');
+    res.json({ order: updated });
+  } catch (err) {
+    console.error('[cancelOrder]', err);
+    res.status(500).json({ message: 'Failed to cancel order' });
+  }
+};
+
+// POST /orders/midtrans/notification  — Midtrans webhook (public)
+exports.midtransNotification = async (req, res) => {
+  try {
+    // Verify the notification signature with Midtrans SDK
+    // (throws if the hash doesn't match — rejects spoofed webhooks)
+    const notification = await snap.transaction.notification(req.body);
+
+    const {
+      order_id: midtransOrderId,
+      transaction_status: transactionStatus,
+      fraud_status: fraudStatus,
+    } = notification;
+
+    console.log('[midtransNotification] received:', { midtransOrderId, transactionStatus, fraudStatus });
+
+    // ── FIX 1: resolve the numeric DB id from the Midtrans order_id string ──
+    const dbOrderId = await resolveOrderId(midtransOrderId);
+    if (!dbOrderId) {
+      console.error('[midtransNotification] Could not resolve DB id for:', midtransOrderId);
+      // Return 200 so Midtrans doesn't keep retrying a permanently unresolvable id
+      return res.status(200).json({ message: 'Order not found, skipping' });
     }
 
-    res.status(200).json({ message: 'OK' });
+    const newStatus = mapMidtransStatus(transactionStatus, fraudStatus);
+    console.log(`[midtransNotification] Updating order #${dbOrderId} → "${newStatus}"`);
+
+    const updated = await OrderModel.updateStatus(dbOrderId, newStatus);
+    if (!updated) {
+      console.warn('[midtransNotification] updateStatus returned null for id:', dbOrderId);
+    }
+
+    // Always return 200 — Midtrans retries on any non-2xx response
+    res.status(200).json({ message: 'OK', orderId: dbOrderId, status: newStatus });
   } catch (err) {
     console.error('[midtransNotification] error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    // Still 200 to stop Midtrans retry loop for non-transient errors
+    res.status(200).json({ message: 'Webhook processing error' });
   }
-};
-
-// ─── GET /api/orders/guest/:id  — retrieve guest order (NO AUTH REQUIRED) ─────
-//
-// The :id parameter may be any of:
-//   "42"                              → plain numeric DB id
-//   "NAINARA-GUEST-42-1774518813848"  → Midtrans composite id
-//   "NAINARA-USER-42-1774518813848"   → Midtrans composite id (user order)
-//   "NAINARA-42"                      → legacy format
-//
-// We always extract the numeric DB id before querying so Postgres never
-// receives a non-integer string, which would throw a cast error and — before
-// this fix — would be an unhandled rejection that killed the process.
-const getGuestOrder = async (req, res) => {
-  try {
-    const raw = req.params.id;
-
-    // Extract numeric DB id from any id format the frontend might send:
-    //   42                              → plain numeric DB id
-    //   NAINARA-GUEST-42-1774518813848  → Midtrans composite (guest)
-    //   NAINARA-USER-42-1774518813848   → Midtrans composite (user)
-    //   NAINARA-42                      → legacy format
-    // IMPORTANT: never pass a non-integer string to findById — Postgres would
-    // throw a cast error (42P01 / 22P02) which previously crashed the process.
-    let dbId;
-    const compositeMatch = raw.match(/^NAINARA-(?:GUEST|USER)-(\d+)-\d+$/i);
-    const legacyMatch    = raw.match(/^NAINARA-(\d+)$/i);
-
-    if (compositeMatch) {
-      dbId = parseInt(compositeMatch[1], 10);
-    } else if (legacyMatch) {
-      dbId = parseInt(legacyMatch[1], 10);
-    } else if (/^\d+$/.test(raw)) {
-      dbId = parseInt(raw, 10);
-    } else {
-      return res.status(404).json({ error: 'Order not found.' });
-    }
-
-    const order = await OrderModel.findById(dbId);
-    if (!order) return res.status(404).json({ error: 'Order not found.' });
-
-    const items = await OrderModel.getOrderItems(order.id);
-    res.json({ ...order, items });
-  } catch (err) {
-    console.error('[getGuestOrder] error:', err);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
-};
-
-module.exports = {
-  createOrder,
-  createGuestOrder,
-  getMyOrders,
-  getMyOrder,
-  getAllOrders,
-  updateOrderStatus,
-  cancelOrder,
-  midtransNotification,
-  adminGetOrder,
-  adminUpdateOrderStatus,
-  getGuestOrder,
 };
