@@ -8,7 +8,15 @@ const getProductReviews = async (req, res, next) => {
     const reviews = await ReviewModel.findByProduct(req.params.id);
     const stats = await ReviewModel.getAverageRating(req.params.id);
     res.json({ reviews, ...stats });
-  } catch (err) { next(err); }
+  } catch (err) {
+    // 42P01 = relation does not exist (product_reviews table missing in production).
+    // Return safe empty response instead of crashing the server process.
+    if (err.code === '42P01') {
+      console.warn('[getProductReviews] Table missing — returning empty response');
+      return res.json({ reviews: [], average_rating: null, review_count: 0 });
+    }
+    next(err);
+  }
 };
 
 // POST /api/products/:id/reviews — authenticated
@@ -41,7 +49,13 @@ const createReview = async (req, res, next) => {
     });
 
     res.status(201).json({ message: 'Review submitted.', review });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.code === '42P01') {
+      console.warn('[createReview] Table missing');
+      return res.status(503).json({ message: 'Reviews are temporarily unavailable.' });
+    }
+    next(err);
+  }
 };
 
 // GET /api/reviews/mine — authenticated, user's own reviews
