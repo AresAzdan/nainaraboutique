@@ -89,8 +89,9 @@ exports.createOrder = async (req, res) => {
     recipientName = null,
   } = req.body;
 
-  if (!items || items.length === 0) {
-    return res.status(400).json({ message: 'No items provided' });
+// if (!items || items.length === 0) {
+//   return res.status(400).json({ message: 'No items provided' });
+// }
   }
 
   const client = await db.pool.connect();
