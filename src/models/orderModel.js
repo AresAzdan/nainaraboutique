@@ -6,7 +6,7 @@ const OrderModel = {
     const { rows } = await db.query(
       `SELECT o.*, u.name AS user_name, u.email AS user_email
        FROM orders o
-       JOIN users u ON o.user_id = u.id
+       LEFT JOIN users u ON o.user_id = u.id
        ORDER BY o.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -26,18 +26,20 @@ const OrderModel = {
     const { rows } = await db.query(
       `SELECT o.*, u.name AS user_name, u.email AS user_email
        FROM orders o
-       JOIN users u ON o.user_id = u.id
+       LEFT JOIN users u ON o.user_id = u.id
        WHERE o.id = $1`,
-      [orderid]
+      [id]
     );
     return rows[0] || null;
   },
 
   async getOrderItems(orderId) {
     const { rows } = await db.query(
-      `SELECT oi.*, p.name AS product_name, p.image_url
+      `SELECT oi.*,
+              COALESCE(p.name, oi.product_name, 'Product') AS product_name,
+              p.image_url
        FROM order_items oi
-       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN products p ON oi.product_id = p.id
        WHERE oi.order_id = $1`,
       [orderId]
     );
