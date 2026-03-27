@@ -36,9 +36,9 @@ router.put('/categories/:id',  updateCategory);
 router.delete('/categories/:id', deleteCategory);
 
 // ── Orders ────────────────────────────────────
-router.get('/orders',            getAllOrders);
-router.get('/orders/:id',        adminGetOrder);
-router.put('/orders/:id/status', validate(['status']), adminUpdateOrderStatus);
+//router.get('/orders',            getAllOrders);
+//router.get('/orders/:id',        adminGetOrder);
+//router.put('/orders/:id/status', validate(['status']), adminUpdateOrderStatus);
 
 // ── Discounts ─────────────────────────────────
 router.get('/discounts',         getAllDiscounts);
