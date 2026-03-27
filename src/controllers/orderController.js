@@ -238,7 +238,7 @@ const updateOrderStatus = async (req, res, next) => {
 const cancelOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
-    const order = await OrderModel.findByOrderId(req.params.id);
+    const order = await OrderModel.findById(req.params.id);
     if (!order) throw createError(404, 'Order not found.');
     if (order.user_id !== req.user.id)
       return res.status(403).json({ message: 'Unauthorized access.' });
@@ -470,9 +470,30 @@ const midtransNotification = async (req, res) => {
 // this fix — would be an unhandled rejection that killed the process.
 const getGuestOrder = async (req, res) => {
   try {
-    const orderId = req.params.id;
+    const raw = req.params.id;
 
-    const order = await OrderModel.findByOrderId(orderId);
+    // Extract numeric DB id from any id format the frontend might send:
+    //   42                              → plain numeric DB id
+    //   NAINARA-GUEST-42-1774518813848  → Midtrans composite (guest)
+    //   NAINARA-USER-42-1774518813848   → Midtrans composite (user)
+    //   NAINARA-42                      → legacy format
+    // IMPORTANT: never pass a non-integer string to findById — Postgres would
+    // throw a cast error (42P01 / 22P02) which previously crashed the process.
+    let dbId;
+    const compositeMatch = raw.match(/^NAINARA-(?:GUEST|USER)-(\d+)-\d+$/i);
+    const legacyMatch    = raw.match(/^NAINARA-(\d+)$/i);
+
+    if (compositeMatch) {
+      dbId = parseInt(compositeMatch[1], 10);
+    } else if (legacyMatch) {
+      dbId = parseInt(legacyMatch[1], 10);
+    } else if (/^\d+$/.test(raw)) {
+      dbId = parseInt(raw, 10);
+    } else {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = await OrderModel.findById(dbId);
     if (!order) return res.status(404).json({ error: 'Order not found.' });
 
     const items = await OrderModel.getOrderItems(order.id);
