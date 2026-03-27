@@ -29,7 +29,7 @@ const expireOrderIfStale = async (order, clientOrDb = db) => {
   return result.rows[0];
 };
 
-// ─── POST /api/orders  — create order from current cart ──────────────────────
+// ─── POST /api/orders  — create order from cart (DB cart OR body items) ──────
 const createOrder = async (req, res, next) => {
   const client = await db.connect();
   try {
@@ -46,6 +46,7 @@ const createOrder = async (req, res, next) => {
       postal_code      = '',
       courier          = '',
       shipping_service = '',
+      items: bodyItems = [],   // ← frontend cart items sent directly
     } = req.body;
 
     const existingPending = await client.query(
@@ -58,25 +59,54 @@ const createOrder = async (req, res, next) => {
 
     await client.query('BEGIN');
 
-    const { cart_id, items } = await CartModel.getCartWithItems(req.user.id);
-    if (items.length === 0) throw createError(400, 'Your cart is empty.');
+    // ── Resolve cart items ─────────────────────────────────────────────────────
+    // Strategy: prefer DB cart (stock-validated). If DB cart is empty, fall back
+    // to items sent by the frontend (localStorage cart). This handles the common
+    // case where the frontend clears its cart before hitting Pay, leaving the DB
+    // cart empty even though items exist in the request body.
+    let cart_id   = null;
+    let cartItems = [];
+    let usingBodyItems = false;
+
+    const dbCart = await CartModel.getCartWithItems(req.user.id);
+    if (dbCart.items && dbCart.items.length > 0) {
+      cart_id   = dbCart.cart_id;
+      cartItems = dbCart.items;
+    } else if (bodyItems && bodyItems.length > 0) {
+      usingBodyItems = true;
+      // Normalize body items to the same shape CartModel returns
+      cartItems = bodyItems.map(i => ({
+        product_id:   i.product_id   || null,
+        product_name: i.product_name || i.name || 'Product',
+        quantity:     Number(i.quantity) || 1,
+        price:        parseFloat(i.price) || 0,
+        size:         i.size || null,
+        // Body items have no live stock data — skip stock check below
+        stock:        Infinity,
+      }));
+    } else {
+      throw createError(400, 'Your cart is empty.');
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     let subtotal = 0;
     const orderItems = [];
 
-    for (const item of items) {
-      if (item.stock < item.quantity) {
+    for (const item of cartItems) {
+      if (!usingBodyItems && item.stock < item.quantity) {
         throw createError(
           400,
-          `Insufficient stock for "${item.name}". Available: ${item.stock}.`
+          `Insufficient stock for "${item.product_name || item.name}". Available: ${item.stock}.`
         );
       }
       const lineTotal = parseFloat(item.price) * item.quantity;
       subtotal += lineTotal;
       orderItems.push({
-        product_id: item.product_id,
-        quantity:   item.quantity,
-        price:      parseFloat(item.price),
+        product_id:   item.product_id   || null,
+        product_name: item.product_name || item.name || 'Product',
+        quantity:     item.quantity,
+        price:        parseFloat(item.price),
+        size:         item.size || null,
       });
     }
 
@@ -121,7 +151,10 @@ const createOrder = async (req, res, next) => {
       } catch (_e) { /* promo failure is non-fatal */ }
     }
 
-    await CartModel.clearCart(cart_id, client);
+    // Only clear the DB cart if we actually used it
+    if (!usingBodyItems && cart_id) {
+      await CartModel.clearCart(cart_id, client);
+    }
     await client.query('COMMIT');
 
     const orderItems2 = await OrderModel.getOrderItems(order.id);
@@ -140,9 +173,10 @@ const createOrder = async (req, res, next) => {
     const transaction = await snap.createTransaction(parameter);
 
     res.status(201).json({
-      message:    'Order placed successfully.',
-      order:      { ...order, items: orderItems2 },
-      snap_token: transaction.token,
+      message:     'Order placed successfully.',
+      order:       { ...order, items: orderItems2 },
+      snap_token:  transaction.token,
+      order_db_id: order.id,   // mirrors guest endpoint; frontend reads this for Snap callbacks
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
