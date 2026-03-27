@@ -31,12 +31,11 @@ const register = async (req, res, next) => {
 // POST /api/auth/login
 const login = async (req, res, next) => {
   try {
-    // --- DEFENSIVE EXTRACTION ---
-    // Explicitly cast to string to prevent bcrypt.compare receiving
-    // undefined/null/non-string, which silently returns false.
-    const email    = typeof req.body.email    === 'string' ? req.body.email.trim()    : null;
-    const password = typeof req.body.password === 'string' ? req.body.password        : null;
-    // NOTE: Do NOT trim() password — leading/trailing spaces are intentional.
+    // Explicitly cast to string — bcrypt.compare(null/undefined, hash)
+    // returns false silently, causing a confusing 401 with no real error.
+    const email    = typeof req.body.email    === 'string' ? req.body.email.trim() : null;
+    const password = typeof req.body.password === 'string' ? req.body.password     : null;
+    // NOTE: Never trim() password — spaces may be intentional.
 
     if (!email || !password) {
       return next(createError(400, 'Email and password are required.'));
@@ -45,9 +44,8 @@ const login = async (req, res, next) => {
     const user = await UserModel.findByEmail(email);
     if (!user) throw createError(401, 'Invalid email or password.');
 
-    // --- SAFETY CHECK: ensure the stored hash is a non-empty string ---
-    // If the DB column is null or empty (e.g. OAuth-only account), bcrypt.compare
-    // would silently return false. Surface this as a clear error instead.
+    // Guard: stored hash must be a non-empty string.
+    // If null (e.g. OAuth-only account), bcrypt.compare would silently return false.
     if (!user.password || typeof user.password !== 'string') {
       throw createError(401, 'Invalid email or password.');
     }
@@ -110,7 +108,6 @@ const forgotPassword = async (req, res, next) => {
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await db.query('INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1, $2, $3)', [user.id, token, expiresAt]);
-    // TODO: Send email with reset link in production
     res.json({
       message: 'If that email exists, a reset link has been generated.',
       reset_token: token,
