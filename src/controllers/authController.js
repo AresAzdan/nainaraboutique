@@ -31,13 +31,36 @@ const register = async (req, res, next) => {
 // POST /api/auth/login
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    // --- DEFENSIVE EXTRACTION ---
+    // Explicitly cast to string to prevent bcrypt.compare receiving
+    // undefined/null/non-string, which silently returns false.
+    const email    = typeof req.body.email    === 'string' ? req.body.email.trim()    : null;
+    const password = typeof req.body.password === 'string' ? req.body.password        : null;
+    // NOTE: Do NOT trim() password — leading/trailing spaces are intentional.
+
+    if (!email || !password) {
+      return next(createError(400, 'Email and password are required.'));
+    }
+
     const user = await UserModel.findByEmail(email);
     if (!user) throw createError(401, 'Invalid email or password.');
+
+    // --- SAFETY CHECK: ensure the stored hash is a non-empty string ---
+    // If the DB column is null or empty (e.g. OAuth-only account), bcrypt.compare
+    // would silently return false. Surface this as a clear error instead.
+    if (!user.password || typeof user.password !== 'string') {
+      throw createError(401, 'Invalid email or password.');
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw createError(401, 'Invalid email or password.');
+
     const token = signToken(user);
-    res.json({ message: 'Login successful.', token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    res.json({
+      message: 'Login successful.',
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
   } catch (err) { next(err); }
 };
 
