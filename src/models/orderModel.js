@@ -45,8 +45,7 @@ const OrderModel = {
     const { rows } = await db.query(
       `SELECT oi.*,
               COALESCE(
-                NULLIF(TRIM(p.name),    ''),
-                NULLIF(TRIM(p.title),   ''),
+                NULLIF(TRIM(p.name),          ''),
                 NULLIF(TRIM(oi.product_name), ''),
                 'Unknown Product'
               ) AS product_name,
@@ -109,7 +108,7 @@ const OrderModel = {
 
   async updateStatus(id, status) {
     const { rows } = await db.query(
-      `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      `UPDATE orders SET status = $1 WHERE id = $2 RETURNING *`,
       [status, id]
     );
     return rows[0] || null;
