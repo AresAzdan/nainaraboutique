@@ -4862,14 +4862,42 @@
                 // FIX 5: All async logic is inside a single try/catch block
                 //         Previously the bare fetch + throw were outside try/catch, crashing the whole app
                 try {
-                    // Use the public guest endpoint — no authentication required
-                    const res = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`, {
+                    // Use authenticated endpoint for logged-in users, guest endpoint otherwise
+                    const token = this.getToken();
+                    const endpoint = token
+                        ? `https://nainaraboutique-production.up.railway.app/api/orders/${id}`
+                        : `https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`;
+                    const res = await fetch(endpoint, {
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                         }
                     });
 
                     console.log("Response status:", res.status);
+
+                    // If auth endpoint returns 403 (order belongs to different user),
+                    // fall back to guest endpoint before giving up
+                    if (res.status === 403 && token) {
+                        const guestRes = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`, {
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        if (!guestRes.ok) throw new Error(`Server responded with ${guestRes.status}`);
+                        const guestData = await guestRes.json();
+                        const guestOrder = guestData.order || guestData;
+                        const acceptedStatuses = ["paid", "pending", "settlement", "capture"];
+                        if (!acceptedStatuses.includes(guestOrder.status)) { this.navigateTo("orders"); return; }
+                        const displayId = guestOrder.id || id;
+                        card.innerHTML = `
+                            <div class="order-result-icon success"><i class="fa-solid fa-check"></i></div>
+                            <h1 class="order-result-title">Order Successful</h1>
+                            <p class="order-result-description">Thank you for your purchase. Your order has been received and is being prepared with care.</p>
+                            <div class="order-result-id-box"><span class="order-result-id-label">Order ID</span><span class="order-result-id-value" id="success-order-id">#${displayId}</span></div>
+                            <br>
+                            <button class="btn-order-result primary" onclick="app.navigateTo('shop')">Continue Shopping</button>
+                            <button class="btn-order-result" onclick="app.navigateTo('order-detail?id=${displayId}')" style="margin-top:12px; background:#f7f4ef; color:var(--text-color); border:1px solid var(--border-color);">View Order</button>`;
+                        return;
+                    }
 
                     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
