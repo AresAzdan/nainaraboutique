@@ -418,7 +418,7 @@ exports.getMyOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
+    if (Number(order.user_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Forbidden' });
     const items = await OrderModel.getOrderItems(order.id);
     return res.json({ order, items });
   } catch (err) {
@@ -446,7 +446,7 @@ exports.updateOrderStatus = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
+    if (Number(order.user_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Forbidden' });
     const updated = await OrderModel.updateStatus(order.id, req.body.status);
     return res.json({ order: updated });
   } catch (err) {
@@ -460,7 +460,7 @@ exports.cancelOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
+    if (Number(order.user_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Forbidden' });
     if (order.status !== 'pending') {
       return res.status(400).json({ message: `Cannot cancel an order with status "${order.status}"` });
     }
