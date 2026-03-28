@@ -4760,7 +4760,7 @@
                     }
 
                     const data = await res.json();
-                    const snap_token = data.snap_token || (data.order && data.order.snap_token);
+                    const snap_token = data.snapToken || data.snap_token || (data.order && (data.order.snapToken || data.order.snap_token));
                     if (!snap_token) throw new Error('snap_token not returned by server.');
 
                     // FIX: The backend returns order_db_id (numeric DB primary key).
