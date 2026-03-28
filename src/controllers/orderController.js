@@ -11,23 +11,13 @@ const snap = new midtransClient.Snap({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Resolve the numeric DB id from a Midtrans order_id string.
- * Strategy 1 (preferred): look up by midtrans_order_id column — set at token creation.
- * Strategy 2 (fallback): should never be needed if Strategy 1 is in place,
- *   but kept as a safety net using the timestamp suffix.
- */
 async function resolveOrderId(midtransOrderId) {
-  // Strategy 1: look up by the stored midtrans_order_id column (most reliable)
   const { rows } = await db.query(
     `SELECT id FROM orders WHERE midtrans_order_id = $1 LIMIT 1`,
     [midtransOrderId]
   );
   if (rows.length > 0) return rows[0].id;
 
-  // Strategy 2: the suffix after the last '-' is a Unix-ms timestamp.
-  // Find the order whose midtrans_order_id was set closest to that time.
-  // NOTE: This is only a safety net — Strategy 1 should always match.
   const suffix = midtransOrderId.split('-').pop();
   const ts = parseInt(suffix, 10);
   if (!isNaN(ts)) {
@@ -44,10 +34,6 @@ async function resolveOrderId(midtransOrderId) {
   return null;
 }
 
-/**
- * Map Midtrans transaction_status → internal status string.
- * Reference: https://docs.midtrans.com/docs/transaction-status-flow
- */
 function mapMidtransStatus(transactionStatus, fraudStatus) {
   switch (transactionStatus) {
     case 'capture':
@@ -71,10 +57,29 @@ function mapMidtransStatus(transactionStatus, fraudStatus) {
   }
 }
 
+// ─── Pool resolver ────────────────────────────────────────────────────────────
+// Supports both { pool } and { query } export shapes from db config.
+// If your db module exports a pool directly (module.exports = pool), pass it as-is.
+// If it exports { pool, query }, we use pool.connect().
+// If it only exports { query } (no pool), we fall back to db.query with manual client sim.
+function getPool() {
+  if (db && typeof db.connect === 'function') {
+    // db IS the pool
+    return db;
+  }
+  if (db && db.pool && typeof db.pool.connect === 'function') {
+    // db has a .pool property
+    return db.pool;
+  }
+  return null;
+}
+
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
 // POST /orders  — authenticated, create order from cart
 exports.createOrder = async (req, res) => {
+  console.log('[createOrder] ▶ entered');
+
   const userId = req.user.id;
   const {
     items,
@@ -87,15 +92,45 @@ exports.createOrder = async (req, res) => {
     recipientName = null,
   } = req.body;
 
-  // FIX C — handle missing items gracefully instead of crashing
   if (!items || items.length === 0) {
+    console.warn('[createOrder] ✖ no items in request body');
     return res.status(400).json({ message: 'No items provided' });
   }
 
-  // FIX A — client declared inside the async function body (no stray closing brace above)
-  const client = await db.pool.connect();
+  // ── Resolve pool ─────────────────────────────────────────────────────────
+  // ROOT CAUSE FIX: db.pool.connect() throws TypeError when db has no .pool.
+  // We detect the correct way to get a client from whatever db exports.
+  const pool = getPool();
+
+  if (!pool) {
+    // db module doesn't expose a pool — fall back to non-transactional path
+    // using db.query directly. This is safe for single-statement flows.
+    console.warn(
+      '[createOrder] ⚠ db.pool not available — falling back to db.query (no transaction).'
+    );
+    console.warn(
+      '[createOrder] ⚠ Fix: export pool from your db config for full transaction support.'
+    );
+    return exports._createOrderNoPool(req, res, {
+      userId, items, shippingAddress, shippingMethod,
+      shippingCost, discountAmount, promoCode, phone, recipientName,
+    });
+  }
+
+  // ── Happy path: full transaction ─────────────────────────────────────────
+  let client;
+  try {
+    console.log('[createOrder] acquiring DB client from pool...');
+    client = await pool.connect();
+    console.log('[createOrder] ✔ DB client acquired');
+  } catch (err) {
+    console.error('[createOrder] ✖ Failed to acquire DB client:', err);
+    return res.status(500).json({ message: 'Database connection failed', error: err.message });
+  }
+
   try {
     await client.query('BEGIN');
+    console.log('[createOrder] ✔ DB transaction BEGIN');
 
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
@@ -112,11 +147,14 @@ exports.createOrder = async (req, res) => {
         };
       })
     );
+    console.log('[createOrder] ✔ items enriched:', enrichedItems.length);
 
     const totalAmount =
       enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
       Number(shippingCost) -
       Number(discountAmount);
+
+    console.log('[createOrder] ✔ totalAmount:', totalAmount);
 
     const order = await OrderModel.create(
       {
@@ -133,69 +171,84 @@ exports.createOrder = async (req, res) => {
       },
       client
     );
+    console.log('[createOrder] ✔ order row created, id:', order.id);
 
-    // Generate Midtrans Snap token
+    // ── Midtrans Snap ───────────────────────────────────────────────────────
     const midtransOrderId = `NAINARA-${Date.now()}`;
-    const snapResponse = await snap.createTransaction({
-      transaction_details: {
-        order_id: midtransOrderId,
-        gross_amount: Math.round(totalAmount),
-      },
-      customer_details: {
-        first_name: recipientName || req.user.name || 'Customer',
-        email: req.user.email || '',
-        phone: phone || '',
-      },
-    });
+    console.log('[createOrder] ▶ calling snap.createTransaction for:', midtransOrderId);
 
-    // Persist the Midtrans order_id so the webhook can look it up reliably
+    let snapResponse;
+    try {
+      snapResponse = await snap.createTransaction({
+        transaction_details: {
+          order_id: midtransOrderId,
+          gross_amount: Math.round(totalAmount),
+        },
+        customer_details: {
+          first_name: recipientName || req.user.name || 'Customer',
+          email: req.user.email || '',
+          phone: phone || '',
+        },
+      });
+      console.log('[createOrder] ✔ snap.createTransaction succeeded, token:', snapResponse.token);
+    } catch (midtransErr) {
+      console.error('[createOrder] ✖ snap.createTransaction failed:', midtransErr);
+      await client.query('ROLLBACK');
+      client.release();
+      client = null;
+      return res.status(502).json({
+        message: 'Payment gateway error. Please try again.',
+        error: midtransErr.message,
+      });
+    }
+
+    // Persist the Midtrans order_id
     await client.query(
       `UPDATE orders SET midtrans_order_id = $1 WHERE id = $2`,
       [midtransOrderId, order.id]
     );
 
     await client.query('COMMIT');
+    console.log('[createOrder] ✔ DB transaction COMMIT');
 
-    // FIX B — always respond; never leave the request hanging
+    console.log('[createOrder] ▶ sending 201 response');
     return res.status(201).json({
       order,
       snapToken: snapResponse.token,
       snapRedirectUrl: snapResponse.redirect_url,
     });
+
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('[createOrder]', err);
+    console.error('[createOrder] ✖ unexpected error:', err);
+    try {
+      await client.query('ROLLBACK');
+      console.log('[createOrder] ✔ ROLLBACK issued after error');
+    } catch (rbErr) {
+      console.error('[createOrder] ✖ ROLLBACK itself failed:', rbErr);
+    }
     return res.status(500).json({ message: 'Failed to create order', error: err.message });
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+      console.log('[createOrder] ✔ DB client released');
+    }
   }
 };
 
-// POST /orders/guest  — no auth, guest checkout
-exports.createGuestOrder = async (req, res) => {
+// ─── Fallback: no-pool path (uses db.query directly) ─────────────────────────
+// Used when db module doesn't expose a pool. No DB-level transaction — if
+// Midtrans fails after insert, you may need to clean up manually.
+// Permanent fix: export pool from db config (see comment at top of file).
+exports._createOrderNoPool = async (req, res, params) => {
   const {
-    items,
-    shippingAddress,
-    shippingMethod,
-    shippingCost = 0,
-    discountAmount = 0,
-    promoCode = null,
-    phone = null,
-    recipientName = null,
-    guestEmail = null,
-  } = req.body;
+    userId, items, shippingAddress, shippingMethod,
+    shippingCost, discountAmount, promoCode, phone, recipientName,
+  } = params;
 
-  if (!items || items.length === 0) {
-    return res.status(400).json({ message: 'No items provided' });
-  }
-
-  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN');
-
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
-        const { rows } = await client.query(
+        const { rows } = await db.query(
           `SELECT name, title, price FROM products WHERE id = $1`,
           [item.product_id]
         );
@@ -214,53 +267,138 @@ exports.createGuestOrder = async (req, res) => {
       Number(shippingCost) -
       Number(discountAmount);
 
-    const order = await OrderModel.create(
-      {
-        userId: null,
-        totalAmount,
-        items: enrichedItems,
-        shippingCost,
-        discountAmount,
-        promoCode,
-        shippingAddress,
-        shippingMethod,
-        phone,
-        recipientName,
-      },
-      client
-    );
-
-    const midtransOrderId = `NAINARA-${Date.now()}`;
-    const snapResponse = await snap.createTransaction({
-      transaction_details: {
-        order_id: midtransOrderId,
-        gross_amount: Math.round(totalAmount),
-      },
-      customer_details: {
-        first_name: recipientName || 'Guest',
-        email: guestEmail || '',
-        phone: phone || '',
-      },
+    const order = await OrderModel.create({
+      userId, totalAmount, items: enrichedItems,
+      shippingCost, discountAmount, promoCode,
+      shippingAddress, shippingMethod, phone, recipientName,
     });
 
-    await client.query(
+    const midtransOrderId = `NAINARA-${Date.now()}`;
+    console.log('[createOrder/noPool] ▶ calling snap.createTransaction for:', midtransOrderId);
+
+    let snapResponse;
+    try {
+      snapResponse = await snap.createTransaction({
+        transaction_details: {
+          order_id: midtransOrderId,
+          gross_amount: Math.round(totalAmount),
+        },
+        customer_details: {
+          first_name: recipientName || req.user.name || 'Customer',
+          email: req.user.email || '',
+          phone: phone || '',
+        },
+      });
+      console.log('[createOrder/noPool] ✔ snap token:', snapResponse.token);
+    } catch (midtransErr) {
+      console.error('[createOrder/noPool] ✖ Midtrans failed:', midtransErr);
+      return res.status(502).json({
+        message: 'Payment gateway error. Please try again.',
+        error: midtransErr.message,
+      });
+    }
+
+    await db.query(
       `UPDATE orders SET midtrans_order_id = $1 WHERE id = $2`,
       [midtransOrderId, order.id]
     );
 
-    await client.query('COMMIT');
-
+    console.log('[createOrder/noPool] ▶ sending 201 response');
     return res.status(201).json({
       order,
       snapToken: snapResponse.token,
       snapRedirectUrl: snapResponse.redirect_url,
     });
+
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('[createGuestOrder]', err);
+    console.error('[createOrder/noPool] ✖ unexpected error:', err);
+    return res.status(500).json({ message: 'Failed to create order', error: err.message });
+  }
+};
+
+// POST /orders/guest  — no auth, guest checkout
+exports.createGuestOrder = async (req, res) => {
+  console.log('[createGuestOrder] ▶ entered');
+
+  const {
+    items,
+    shippingAddress,
+    shippingMethod,
+    shippingCost = 0,
+    discountAmount = 0,
+    promoCode = null,
+    phone = null,
+    recipientName = null,
+    guestEmail = null,
+  } = req.body;
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: 'No items provided' });
+  }
+
+  const pool = getPool();
+  if (!pool) {
+    console.warn('[createGuestOrder] ⚠ db.pool not available — using db.query fallback');
+  }
+
+  let client;
+  try {
+    client = pool ? await pool.connect() : null;
+    const q = client ? (sql, vals) => client.query(sql, vals) : (sql, vals) => db.query(sql, vals);
+
+    if (client) await client.query('BEGIN');
+
+    const enrichedItems = await Promise.all(
+      items.map(async (item) => {
+        const { rows } = await q(`SELECT name, title, price FROM products WHERE id = $1`, [item.product_id]);
+        const product = rows[0];
+        return {
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price ?? product?.price ?? 0,
+          product_name: product?.name || product?.title || item.product_name || null,
+        };
+      })
+    );
+
+    const totalAmount =
+      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
+      Number(shippingCost) -
+      Number(discountAmount);
+
+    const order = await OrderModel.create(
+      { userId: null, totalAmount, items: enrichedItems, shippingCost, discountAmount, promoCode, shippingAddress, shippingMethod, phone, recipientName },
+      client || undefined
+    );
+
+    const midtransOrderId = `NAINARA-${Date.now()}`;
+    console.log('[createGuestOrder] ▶ calling snap.createTransaction:', midtransOrderId);
+
+    let snapResponse;
+    try {
+      snapResponse = await snap.createTransaction({
+        transaction_details: { order_id: midtransOrderId, gross_amount: Math.round(totalAmount) },
+        customer_details: { first_name: recipientName || 'Guest', email: guestEmail || '', phone: phone || '' },
+      });
+      console.log('[createGuestOrder] ✔ snap token:', snapResponse.token);
+    } catch (midtransErr) {
+      console.error('[createGuestOrder] ✖ Midtrans failed:', midtransErr);
+      if (client) { await client.query('ROLLBACK'); client.release(); client = null; }
+      return res.status(502).json({ message: 'Payment gateway error. Please try again.', error: midtransErr.message });
+    }
+
+    await q(`UPDATE orders SET midtrans_order_id = $1 WHERE id = $2`, [midtransOrderId, order.id]);
+    if (client) await client.query('COMMIT');
+
+    console.log('[createGuestOrder] ▶ sending 201 response');
+    return res.status(201).json({ order, snapToken: snapResponse.token, snapRedirectUrl: snapResponse.redirect_url });
+
+  } catch (err) {
+    console.error('[createGuestOrder] ✖ unexpected error:', err);
+    if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
     return res.status(500).json({ message: 'Failed to create guest order', error: err.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 };
 
@@ -280,9 +418,7 @@ exports.getMyOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
     const items = await OrderModel.getOrderItems(order.id);
     return res.json({ order, items });
   } catch (err) {
@@ -296,9 +432,7 @@ exports.getGuestOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== null) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (order.user_id !== null) return res.status(403).json({ message: 'Forbidden' });
     const items = await OrderModel.getOrderItems(order.id);
     return res.json({ order, items });
   } catch (err) {
@@ -312,9 +446,7 @@ exports.updateOrderStatus = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
     const updated = await OrderModel.updateStatus(order.id, req.body.status);
     return res.json({ order: updated });
   } catch (err) {
@@ -328,13 +460,9 @@ exports.cancelOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (order.user_id !== req.user.id) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    if (order.user_id !== req.user.id) return res.status(403).json({ message: 'Forbidden' });
     if (order.status !== 'pending') {
-      return res.status(400).json({
-        message: `Cannot cancel an order with status "${order.status}"`,
-      });
+      return res.status(400).json({ message: `Cannot cancel an order with status "${order.status}"` });
     }
     const updated = await OrderModel.updateStatus(order.id, 'cancelled');
     return res.json({ order: updated });
@@ -346,12 +474,9 @@ exports.cancelOrder = async (req, res) => {
 
 // ─── Admin controllers ────────────────────────────────────────────────────────
 
-// GET /admin/orders
 exports.getAllOrders = async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT * FROM orders ORDER BY created_at DESC`
-    );
+    const { rows } = await db.query(`SELECT * FROM orders ORDER BY created_at DESC`);
     return res.json({ orders: rows });
   } catch (err) {
     console.error('[getAllOrders]', err);
@@ -359,7 +484,6 @@ exports.getAllOrders = async (req, res) => {
   }
 };
 
-// GET /admin/orders/:id
 exports.adminGetOrder = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
@@ -372,7 +496,6 @@ exports.adminGetOrder = async (req, res) => {
   }
 };
 
-// PUT /admin/orders/:id/status
 exports.adminUpdateOrderStatus = async (req, res) => {
   try {
     const order = await OrderModel.findById(req.params.id);
@@ -388,26 +511,18 @@ exports.adminUpdateOrderStatus = async (req, res) => {
 // POST /orders/midtrans/notification  — Midtrans webhook (public)
 exports.midtransNotification = async (req, res) => {
   try {
-    // Verify notification signature (throws if hash doesn't match)
     const notification = await snap.transaction.notification(req.body);
-
     const {
       order_id: midtransOrderId,
       transaction_status: transactionStatus,
       fraud_status: fraudStatus,
     } = notification;
 
-    console.log('[midtransNotification] received:', {
-      midtransOrderId,
-      transactionStatus,
-      fraudStatus,
-    });
+    console.log('[midtransNotification] received:', { midtransOrderId, transactionStatus, fraudStatus });
 
-    // FIX D — resolve the real DB row id from the Midtrans order_id string
     const dbOrderId = await resolveOrderId(midtransOrderId);
     if (!dbOrderId) {
       console.error('[midtransNotification] Could not resolve DB id for:', midtransOrderId);
-      // Return 200 so Midtrans stops retrying a permanently unresolvable id
       return res.status(200).json({ message: 'Order not found, skipping' });
     }
 
@@ -419,7 +534,6 @@ exports.midtransNotification = async (req, res) => {
       console.warn('[midtransNotification] updateStatus returned null for id:', dbOrderId);
     }
 
-    // Always return 200 — Midtrans retries on any non-2xx
     return res.status(200).json({ message: 'OK', orderId: dbOrderId, status: newStatus });
   } catch (err) {
     console.error('[midtransNotification] error:', err);
