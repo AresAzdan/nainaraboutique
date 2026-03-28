@@ -3918,9 +3918,12 @@
                     if (!res.ok) throw new Error(data.message);
 
                     const order = data.order || data;
+                    // Backend returns { order: {...}, items: [...] } as separate top-level keys
+                    const items = data.items || order.items || [];
+                    order.items = items; // normalise so downstream code uses order.items
 
                     // FIX 2: Guard against missing/wrong items key
-                    if (!order.items || !Array.isArray(order.items)) {
+                    if (!Array.isArray(order.items)) {
                         console.error('Unexpected order response shape:', data);
                         wrapper.innerHTML = `<div style="padding:40px;">Order items could not be loaded. Check API response shape.</div>`;
                         return;
@@ -4760,7 +4763,7 @@
                     }
 
                     const data = await res.json();
-                    const snap_token = data.snapToken || data.snap_token || (data.order && (data.order.snapToken || data.order.snap_token));
+                    const snap_token = data.snap_token || (data.order && data.order.snap_token);
                     if (!snap_token) throw new Error('snap_token not returned by server.');
 
                     // FIX: The backend returns order_db_id (numeric DB primary key).
@@ -4862,42 +4865,14 @@
                 // FIX 5: All async logic is inside a single try/catch block
                 //         Previously the bare fetch + throw were outside try/catch, crashing the whole app
                 try {
-                    // Use authenticated endpoint for logged-in users, guest endpoint otherwise
-                    const token = this.getToken();
-                    const endpoint = token
-                        ? `https://nainaraboutique-production.up.railway.app/api/orders/${id}`
-                        : `https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`;
-                    const res = await fetch(endpoint, {
+                    // Use the public guest endpoint — no authentication required
+                    const res = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`, {
                         headers: {
-                            'Content-Type': 'application/json',
-                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                            'Content-Type': 'application/json'
                         }
                     });
 
                     console.log("Response status:", res.status);
-
-                    // If auth endpoint returns 403 (order belongs to different user),
-                    // fall back to guest endpoint before giving up
-                    if (res.status === 403 && token) {
-                        const guestRes = await fetch(`https://nainaraboutique-production.up.railway.app/api/orders/guest/${id}`, {
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-                        if (!guestRes.ok) throw new Error(`Server responded with ${guestRes.status}`);
-                        const guestData = await guestRes.json();
-                        const guestOrder = guestData.order || guestData;
-                        const acceptedStatuses = ["paid", "pending", "settlement", "capture"];
-                        if (!acceptedStatuses.includes(guestOrder.status)) { this.navigateTo("orders"); return; }
-                        const displayId = guestOrder.id || id;
-                        card.innerHTML = `
-                            <div class="order-result-icon success"><i class="fa-solid fa-check"></i></div>
-                            <h1 class="order-result-title">Order Successful</h1>
-                            <p class="order-result-description">Thank you for your purchase. Your order has been received and is being prepared with care.</p>
-                            <div class="order-result-id-box"><span class="order-result-id-label">Order ID</span><span class="order-result-id-value" id="success-order-id">#${displayId}</span></div>
-                            <br>
-                            <button class="btn-order-result primary" onclick="app.navigateTo('shop')">Continue Shopping</button>
-                            <button class="btn-order-result" onclick="app.navigateTo('order-detail?id=${displayId}')" style="margin-top:12px; background:#f7f4ef; color:var(--text-color); border:1px solid var(--border-color);">View Order</button>`;
-                        return;
-                    }
 
                     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
