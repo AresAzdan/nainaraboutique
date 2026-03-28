@@ -135,7 +135,7 @@ exports.createOrder = async (req, res) => {
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
         const { rows } = await client.query(
-          `SELECT name, title, price FROM products WHERE id = $1`,
+          `SELECT name, price FROM products WHERE id = $1`,
           [item.product_id]
         );
         const product = rows[0];
@@ -143,7 +143,7 @@ exports.createOrder = async (req, res) => {
           product_id: item.product_id,
           quantity: item.quantity,
           price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || product?.title || item.product_name || null,
+          product_name: product?.name || item.product_name || null,
         };
       })
     );
@@ -249,7 +249,7 @@ exports._createOrderNoPool = async (req, res, params) => {
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
         const { rows } = await db.query(
-          `SELECT name, title, price FROM products WHERE id = $1`,
+          `SELECT name, price FROM products WHERE id = $1`,
           [item.product_id]
         );
         const product = rows[0];
@@ -257,7 +257,7 @@ exports._createOrderNoPool = async (req, res, params) => {
           product_id: item.product_id,
           quantity: item.quantity,
           price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || product?.title || item.product_name || null,
+          product_name: product?.name || item.product_name || null,
         };
       })
     );
@@ -350,13 +350,13 @@ exports.createGuestOrder = async (req, res) => {
 
     const enrichedItems = await Promise.all(
       items.map(async (item) => {
-        const { rows } = await q(`SELECT name, title, price FROM products WHERE id = $1`, [item.product_id]);
+        const { rows } = await q(`SELECT name, price FROM products WHERE id = $1`, [item.product_id]);
         const product = rows[0];
         return {
           product_id: item.product_id,
           quantity: item.quantity,
           price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || product?.title || item.product_name || null,
+          product_name: product?.name || item.product_name || null,
         };
       })
     );
