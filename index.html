@@ -26,57 +26,6 @@
          * ------------------------------------------------------------------
          */
 
-        /* ═══════════════════════════════════════════════════
-         * GLOBAL PAGE LOADER
-         * ═══════════════════════════════════════════════════ */
-        #nainara-loader {
-            position: fixed;
-            inset: 0;
-            z-index: 99999;
-            background-color: #faf8f5;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 28px;
-            /* start visible, fade out when .loader-hide is applied */
-            opacity: 1;
-            transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-            pointer-events: all;
-        }
-        #nainara-loader.loader-hide {
-            opacity: 0;
-            pointer-events: none;
-        }
-        #nainara-loader.loader-gone {
-            display: none;
-        }
-        .loader-wordmark {
-            font-family: 'Alex Brush', cursive;
-            font-size: 2.2rem;
-            color: #5D5340;
-            letter-spacing: 0.02em;
-            line-height: 1;
-            /* subtle pulse while waiting */
-            animation: loaderPulse 2s ease-in-out infinite;
-        }
-        @keyframes loaderPulse {
-            0%, 100% { opacity: 0.7; }
-            50%       { opacity: 1;   }
-        }
-        .loader-svg-wrap {
-            width: 120px;
-            height: 60px;
-        }
-        .loader-svg-wrap svg {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* ═══════════════════════════════════════════════════
-         * END GLOBAL PAGE LOADER
-         * ═══════════════════════════════════════════════════ */
-
         /* --- Custom Font Setup --- */
         @font-face {
             font-family: 'TeX Gyre Termes';
@@ -490,21 +439,11 @@
         .product-grid-editorial { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; min-height: 400px; }
         
         .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; }
-        @media (hover: hover) and (pointer: fine) { .prod-card-e:hover { transform: translateY(-5px); } }
-        @media (hover: hover) and (pointer: fine) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); } }
+        .prod-card-e:hover { transform: translateY(-5px); }
 
-        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px;
-            /* Fix iOS Safari scroll flicker: overflow:hidden + border-radius loses GPU layer on scroll.
-               -webkit-mask-image forces a compositing layer so clipping never gets invalidated mid-frame. */
-            -webkit-mask-image: -webkit-radial-gradient(white, black);
-            -webkit-transform: translateZ(0);
-            transform: translateZ(0);
-            will-change: transform;
-        }
-        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease;
-            -webkit-transform: translateZ(0);
-            transform: translateZ(0);
-        }
+        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; }
+        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
+        .prod-card-e:hover .prod-img-box img { transform: scale(1.05); }
         
         .prod-meta { text-align: left; display: flex; flex-direction: column; flex-grow: 1; }
         .prod-meta-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -682,7 +621,7 @@
             .section-spacer { padding: 60px 0; }
             
             /* MEMPERBAIKI PRODUCT GRID SCALING DI MOBILE */
-            .prod-card-e { width: 100%; margin: 0; transition: none; }
+            .prod-card-e { width: 100%; margin: 0; }
             .prod-title { font-size: 0.95rem; }
             .prod-price { font-size: 0.95rem; }
 
@@ -1529,27 +1468,6 @@
     </style>
 </head>
 <body>
-
-    <!-- ═══════════════════════════════════════════════════
-         GLOBAL PAGE LOADER
-         ═══════════════════════════════════════════════════ -->
-    <div id="nainara-loader" aria-hidden="true">
-        <span class="loader-wordmark">Nainara</span>
-        <div class="loader-svg-wrap">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150">
-                <path fill="none" stroke="#5D5340" stroke-width="15"
-                      stroke-linecap="round" stroke-dasharray="300 385"
-                      stroke-dashoffset="0"
-                      d="M275 75c0 31-27 50-50 50-58 0-92-100-150-100-28 0-50 22-50 50s23 50 50 50c58 0 92-100 150-100 24 0 50 19 50 50Z">
-                    <animate attributeName="stroke-dashoffset"
-                             calcMode="spline" dur="2"
-                             values="685;-685"
-                             keySplines="0 0 1 1"
-                             repeatCount="indefinite"/>
-                </path>
-            </svg>
-        </div>
-    </div>
 
     <!-- Header -->
     <header>
@@ -5690,77 +5608,6 @@
             </span>
         </div>
     </footer>
-    <script>
-        /* ─────────────────────────────────────────────────────────
-         * NAINARA LOADER
-         * Wires into existing app.init wrapper and app.navigateTo.
-         * No rewrites — minimal, surgical patch.
-         * ───────────────────────────────────────────────────────── */
-        (function () {
-            const loader = document.getElementById('nainara-loader');
-            if (!loader) return;
-
-            let hideTimer = null;
-            let routeHideTimer = null;
-
-            function showLoader() {
-                clearTimeout(hideTimer);
-                clearTimeout(routeHideTimer);
-                loader.classList.remove('loader-hide', 'loader-gone');
-                loader.style.display = '';  // un-gone if needed
-            }
-
-            function hideLoader() {
-                clearTimeout(hideTimer);
-                hideTimer = setTimeout(function () {
-                    loader.classList.add('loader-hide');
-                    // After the CSS transition ends, fully remove from flow
-                    loader.addEventListener('transitionend', function onEnd() {
-                        loader.removeEventListener('transitionend', onEnd);
-                        loader.classList.add('loader-gone');
-                    }, { once: true });
-                }, 80);
-            }
-
-            // ── 1. Initial page load ──────────────────────────────────
-            // Safety net: hide after 4 s even if load event stalls
-            const safetyNet = setTimeout(hideLoader, 4000);
-
-            if (document.readyState === 'complete') {
-                clearTimeout(safetyNet);
-                hideLoader();
-            } else {
-                window.addEventListener('load', function () {
-                    clearTimeout(safetyNet);
-                    hideLoader();
-                }, { once: true });
-            }
-
-            // ── 2. Patch app.init to hide once data is fully ready ────
-            // app.init is already wrapped by the dynamic-product-loader script.
-            // We wrap it one more time so the loader stays until products +
-            // homepage data have resolved.
-            const _origInit = app.init.bind(app);
-            app.init = async function () {
-                await _origInit();
-                hideLoader();
-            };
-
-            // ── 3. SPA route changes ──────────────────────────────────
-            // Patch navigateTo: show loader on departure, hide after render.
-            // The 350 ms hide delay covers async renders (renderOrders,
-            // renderOrderDetail, etc.) that do a Railway round-trip.
-            // Sync renders (shop, product, cart) feel instant underneath it.
-            const _origNavigateTo = app.navigateTo.bind(app);
-            app.navigateTo = function (path) {
-                showLoader();
-                requestAnimationFrame(function () {
-                    _origNavigateTo(path);
-                    routeHideTimer = setTimeout(hideLoader, 350);
-                });
-            };
-        })();
-    </script>
 
 </body>
 </html>
