@@ -26,6 +26,57 @@
          * ------------------------------------------------------------------
          */
 
+        /* ═══════════════════════════════════════════════════
+         * GLOBAL PAGE LOADER
+         * ═══════════════════════════════════════════════════ */
+        #nainara-loader {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            background-color: #faf8f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 28px;
+            /* start visible, fade out when .loader-hide is applied */
+            opacity: 1;
+            transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: all;
+        }
+        #nainara-loader.loader-hide {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #nainara-loader.loader-gone {
+            display: none;
+        }
+        .loader-wordmark {
+            font-family: 'Alex Brush', cursive;
+            font-size: 2.2rem;
+            color: #5D5340;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            /* subtle pulse while waiting */
+            animation: loaderPulse 2s ease-in-out infinite;
+        }
+        @keyframes loaderPulse {
+            0%, 100% { opacity: 0.7; }
+            50%       { opacity: 1;   }
+        }
+        .loader-svg-wrap {
+            width: 120px;
+            height: 60px;
+        }
+        .loader-svg-wrap svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ═══════════════════════════════════════════════════
+         * END GLOBAL PAGE LOADER
+         * ═══════════════════════════════════════════════════ */
+
         /* --- Custom Font Setup --- */
         @font-face {
             font-family: 'TeX Gyre Termes';
@@ -316,10 +367,24 @@
             top: 0;
             background-color: rgba(240, 238, 228, 0.95); 
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             z-index: 1000;
             border-bottom: 1px solid rgba(230, 226, 218, 0.5);
             padding: 12px 0;
             transition: padding 0.3s;
+        }
+
+        /* On mobile, backdrop-filter forces the browser to re-composite every
+           element scrolling beneath the header through the blur kernel on each
+           frame. This is what causes product images to flicker during scroll
+           across ALL mobile browsers (Chrome, Firefox, Safari, Orion).
+           Fix: use a fully opaque background on mobile to eliminate compositing. */
+        @media (max-width: 1024px) {
+            header {
+                background-color: #f0eee4;
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+            }
         }
 
         .nav-wrapper { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 100%; }
@@ -1468,6 +1533,27 @@
     </style>
 </head>
 <body>
+
+    <!-- ═══════════════════════════════════════════════════
+         GLOBAL PAGE LOADER
+         ═══════════════════════════════════════════════════ -->
+    <div id="nainara-loader" aria-hidden="true">
+        <span class="loader-wordmark">Nainara</span>
+        <div class="loader-svg-wrap">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 150">
+                <path fill="none" stroke="#5D5340" stroke-width="15"
+                      stroke-linecap="round" stroke-dasharray="300 385"
+                      stroke-dashoffset="0"
+                      d="M275 75c0 31-27 50-50 50-58 0-92-100-150-100-28 0-50 22-50 50s23 50 50 50c58 0 92-100 150-100 24 0 50 19 50 50Z">
+                    <animate attributeName="stroke-dashoffset"
+                             calcMode="spline" dur="2"
+                             values="685;-685"
+                             keySplines="0 0 1 1"
+                             repeatCount="indefinite"/>
+                </path>
+            </svg>
+        </div>
+    </div>
 
     <!-- Header -->
     <header>
@@ -5608,6 +5694,77 @@
             </span>
         </div>
     </footer>
+    <script>
+        /* ─────────────────────────────────────────────────────────
+         * NAINARA LOADER
+         * Wires into existing app.init wrapper and app.navigateTo.
+         * No rewrites — minimal, surgical patch.
+         * ───────────────────────────────────────────────────────── */
+        (function () {
+            const loader = document.getElementById('nainara-loader');
+            if (!loader) return;
+
+            let hideTimer = null;
+            let routeHideTimer = null;
+
+            function showLoader() {
+                clearTimeout(hideTimer);
+                clearTimeout(routeHideTimer);
+                loader.classList.remove('loader-hide', 'loader-gone');
+                loader.style.display = '';  // un-gone if needed
+            }
+
+            function hideLoader() {
+                clearTimeout(hideTimer);
+                hideTimer = setTimeout(function () {
+                    loader.classList.add('loader-hide');
+                    // After the CSS transition ends, fully remove from flow
+                    loader.addEventListener('transitionend', function onEnd() {
+                        loader.removeEventListener('transitionend', onEnd);
+                        loader.classList.add('loader-gone');
+                    }, { once: true });
+                }, 80);
+            }
+
+            // ── 1. Initial page load ──────────────────────────────────
+            // Safety net: hide after 4 s even if load event stalls
+            const safetyNet = setTimeout(hideLoader, 4000);
+
+            if (document.readyState === 'complete') {
+                clearTimeout(safetyNet);
+                hideLoader();
+            } else {
+                window.addEventListener('load', function () {
+                    clearTimeout(safetyNet);
+                    hideLoader();
+                }, { once: true });
+            }
+
+            // ── 2. Patch app.init to hide once data is fully ready ────
+            // app.init is already wrapped by the dynamic-product-loader script.
+            // We wrap it one more time so the loader stays until products +
+            // homepage data have resolved.
+            const _origInit = app.init.bind(app);
+            app.init = async function () {
+                await _origInit();
+                hideLoader();
+            };
+
+            // ── 3. SPA route changes ──────────────────────────────────
+            // Patch navigateTo: show loader on departure, hide after render.
+            // The 350 ms hide delay covers async renders (renderOrders,
+            // renderOrderDetail, etc.) that do a Railway round-trip.
+            // Sync renders (shop, product, cart) feel instant underneath it.
+            const _origNavigateTo = app.navigateTo.bind(app);
+            app.navigateTo = function (path) {
+                showLoader();
+                requestAnimationFrame(function () {
+                    _origNavigateTo(path);
+                    routeHideTimer = setTimeout(hideLoader, 350);
+                });
+            };
+        })();
+    </script>
 
 </body>
 </html>
