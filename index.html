@@ -490,21 +490,20 @@
         .product-grid-editorial { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; min-height: 400px; }
         
         .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; }
-        /* Hover lift only on devices that truly support hover (not touch screens) */
-        @media (hover: hover) and (pointer: fine) {
-            .prod-card-e:hover { transform: translateY(-5px); }
-        }
+        @media (hover: hover) and (pointer: fine) { .prod-card-e:hover { transform: translateY(-5px); } }
+        @media (hover: hover) and (pointer: fine) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); } }
 
         .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px;
-            /* Promote to GPU layer to prevent flicker during scroll on mobile */
-            transform: translateZ(0);
+            /* Fix iOS Safari scroll flicker: overflow:hidden + border-radius loses GPU layer on scroll.
+               -webkit-mask-image forces a compositing layer so clipping never gets invalidated mid-frame. */
+            -webkit-mask-image: -webkit-radial-gradient(white, black);
             -webkit-transform: translateZ(0);
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
+            transform: translateZ(0);
+            will-change: transform;
         }
-        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
-        @media (hover: hover) and (pointer: fine) {
-            .prod-card-e:hover .prod-img-box img { transform: scale(1.05); }
+        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease;
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
         }
         
         .prod-meta { text-align: left; display: flex; flex-direction: column; flex-grow: 1; }
@@ -519,28 +518,14 @@
         /* --- HIGHLIGHT / LANDING GRID STYLES --- */
         .product-highlight-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 30px; margin-bottom: 40px; }
         .highlight-card { display: block; width: 100%; cursor: pointer; transition: transform 0.4s ease; }
-        @media (hover: hover) and (pointer: fine) {
-            .highlight-card:hover { transform: translateY(-5px); }
-        }
-        .highlight-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 15px; border-radius: 12px;
-            /* GPU layer promotion to prevent scroll flicker on mobile */
-            transform: translateZ(0);
-            -webkit-transform: translateZ(0);
-            backface-visibility: hidden;
-            -webkit-backface-visibility: hidden;
-        }
+        .highlight-card:hover { transform: translateY(-5px); }
+        .highlight-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 15px; border-radius: 12px; }
         .highlight-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
-        @media (hover: hover) and (pointer: fine) {
-            .highlight-card:hover .highlight-img { transform: scale(1.05); }
-        }
+        .highlight-card:hover .highlight-img { transform: scale(1.05); }
         .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.2); opacity: 0; transition: 0.3s; display: flex; align-items: center; justify-content: center; }
-        @media (hover: hover) and (pointer: fine) {
-            .highlight-card:hover .highlight-overlay { opacity: 1; }
-        }
+        .highlight-card:hover .highlight-overlay { opacity: 1; }
         .btn-quick-add { background: #fff; color: var(--text-color); border: none; padding: 12px 24px; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px; font-weight: 600; cursor: pointer; transform: translateY(20px); transition: 0.4s; border-radius: 30px; }
-        @media (hover: hover) and (pointer: fine) {
-            .highlight-card:hover .btn-quick-add { transform: translateY(0); }
-        }
+        .highlight-card:hover .btn-quick-add { transform: translateY(0); }
         .highlight-info { text-align: left; }
         .highlight-name { font-family: var(--font-body); font-size: 1rem; margin-bottom: 5px; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .highlight-price { font-weight: 600; font-size: 0.95rem; }
@@ -697,7 +682,7 @@
             .section-spacer { padding: 60px 0; }
             
             /* MEMPERBAIKI PRODUCT GRID SCALING DI MOBILE */
-            .prod-card-e { width: 100%; margin: 0; transition: none; touch-action: manipulation; }
+            .prod-card-e { width: 100%; margin: 0; transition: none; }
             .prod-title { font-size: 0.95rem; }
             .prod-price { font-size: 0.95rem; }
 
