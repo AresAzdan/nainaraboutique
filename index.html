@@ -3731,11 +3731,12 @@
                         orderPayload.postal_code
                     ].filter(Boolean).join(', '),
                     items: this.data.cart.map(i => ({
+                        product_id:   i.id,
                         product_name: i.name,
-                        image_url: i.image_url || i.image || '',
-                        quantity: i.qty,
-                        size: i.size || '',
-                        price: i.price
+                        image_url:    i.image_url || i.image || '',
+                        quantity:     i.qty,
+                        size:         i.size || '',
+                        price:        i.price
                     }))
                 };
                 // Save order locally so renderPayment can access it
