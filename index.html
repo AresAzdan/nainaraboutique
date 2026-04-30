@@ -1635,11 +1635,13 @@
                     </div>
                     <div class="filter-group">
                         <div class="filter-title" data-i18n="category">Category</div>
-                        <div class="filter-item" onclick="app.toggleFilter('categories', 'Tops', event)"><div class="custom-checkbox"></div> Tops</div>
-                        <div class="filter-item" onclick="app.toggleFilter('categories', 'Bottoms', event)"><div class="custom-checkbox"></div> Bottoms</div>
-                        <div class="filter-item" onclick="app.toggleFilter('categories', 'Outerwear', event)"><div class="custom-checkbox"></div> Outerwear</div>
-                        <div class="filter-item" onclick="app.toggleFilter('categories', 'Accessories', event)"><div class="custom-checkbox"></div> Accessories</div>
-                        <div class="filter-item" onclick="app.toggleFilter('categories', 'Shoes', event)"><div class="custom-checkbox"></div> Shoes</div>
+                        <div id="category-filter-list">
+                            <div class="filter-item" onclick="app.toggleFilter('categories', 'Tops', event)"><div class="custom-checkbox"></div> Tops</div>
+                            <div class="filter-item" onclick="app.toggleFilter('categories', 'Bottoms', event)"><div class="custom-checkbox"></div> Bottoms</div>
+                            <div class="filter-item" onclick="app.toggleFilter('categories', 'Outerwear', event)"><div class="custom-checkbox"></div> Outerwear</div>
+                            <div class="filter-item" onclick="app.toggleFilter('categories', 'Accessories', event)"><div class="custom-checkbox"></div> Accessories</div>
+                            <div class="filter-item" onclick="app.toggleFilter('categories', 'Shoes', event)"><div class="custom-checkbox"></div> Shoes</div>
+                        </div>
                     </div>
                     <div class="filter-group">
                         <div class="filter-title" data-i18n="priceRange">Price Range</div>
@@ -2332,6 +2334,7 @@
                         else if(filterType === 'hot') this.data.filters.type = 'hot'; 
                         else if(category) this.data.filters.categories = [category.charAt(0).toUpperCase() + category.slice(1)];
                     }
+                    this.renderCategoryFilters();
                     this.renderShop();
                 } else if (route === 'product') {
                     const id = parseInt(params.get('id'));
@@ -2517,6 +2520,26 @@
 
                 if (titleEl) { titleEl.setAttribute('data-i18n', titleKey); titleEl.innerHTML = this.t(titleKey); }
                 if (subEl) { subEl.setAttribute('data-i18n', subKey); subEl.textContent = this.t(subKey); }
+            },
+
+            async renderCategoryFilters() {
+                const container = document.getElementById('category-filter-list');
+                if (!container) return;
+                try {
+                    const res = await fetch('https://nainaraboutique.com/api/categories');
+                    if (!res.ok) return;
+                    const data = await res.json();
+                    const cats = Array.isArray(data) ? data : (data.categories || data.data || []);
+                    if (!cats.length) return;
+                    const active = this.data.filters.categories || [];
+                    container.innerHTML = cats.map(c => {
+                        const name = c.name || c;
+                        const isActive = active.includes(name);
+                        return `<div class="filter-item${isActive ? ' active' : ''}" onclick="app.toggleFilter('categories', '${name}', event)"><div class="custom-checkbox"></div> ${name}</div>`;
+                    }).join('');
+                } catch(e) {
+                    console.warn('Could not load categories:', e);
+                }
             },
 
             renderShop() {
