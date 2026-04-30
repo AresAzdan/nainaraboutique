@@ -1341,7 +1341,7 @@
     <div id="toast" class="toast">Action Successful</div>
 
     <script>
-    const API_BASE = 'https://nainaraboutique.com';
+    const API_BASE = 'http://localhost:3000';
 
     function getToken() { return sessionStorage.getItem('nainara_token'); }
 
@@ -1433,7 +1433,7 @@
                 this.data.products = rawProducts.map(p => ({ ...p, categoryId: p.category_id ?? p.categoryId, image: p.images?.[0] || p.image_url || p.image || null, images: p.images || (p.image_url ? [p.image_url] : []), sizes: p.sizes || (p.size ? p.size.split(',').map(s=>s.trim()) : ['All Size']), size_stocks: p.size_stocks || {} }));
                 this.data.orders     = (Array.isArray(orders) ? orders : (orders?.orders || orders?.data || [])).map(o => ({
                     ...o,
-                    customerName: o.user_name || o.customerName || 'Unknown',
+                    customerName: o.recipient_name || o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
                     total: parseFloat(o.total_amount) || parseFloat(o.total) || 0,
                     status: o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1).replace('_', ' ') : 'Pending',
@@ -1789,7 +1789,7 @@
                 const orders = await apiFetch('/api/admin/orders');
                 this.data.orders = (Array.isArray(orders) ? orders : (orders?.orders || orders?.data || [])).map(o => ({
                     ...o,
-                    customerName: o.user_name || o.customerName || 'Unknown',
+                    customerName: o.recipient_name || o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
                     total: parseFloat(o.total_amount) || parseFloat(o.total) || 0,
                     status: o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1).replace('_', ' ') : 'Pending',
