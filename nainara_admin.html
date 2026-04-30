@@ -1610,7 +1610,7 @@
             else { btn.disabled=false; err.classList.add('hidden'); }
         },
 
-        exportOrdersToCSV: function() {
+        exportOrdersToCSV: async function() {
             let startDate, endDate, fileNamePrefix='orders-all-time';
             const today=new Date();
             if (this.exportFilter==='7days') { endDate=new Date(); startDate=new Date(); startDate.setDate(today.getDate()-7); fileNamePrefix='orders-last-7-days'; }
@@ -1622,15 +1622,38 @@
                 return o>=s && o<=e;
             });
             if (!filteredOrders.length) { this.showToast('No orders in selected range'); return; }
-            const rows=[['Customer Name','Product Name','Quantity','Sale Date','Unit Price','Total Price'].join(';')];
-            filteredOrders.forEach(order => {
-                (order.items||[]).forEach(item => {
-                    const product=this.data.products.find(p=>p.id===item.product_id||p.id===item.productId);
-                    const productName=product?product.name:(item.product_name||item.productName||'Unknown');
-                    const clean=(txt)=>String(txt).replace(/;/g,' ').replace(/[\r\n]+/g,' ').trim();
-                    rows.push([clean(order.customerName),clean(productName),item.quantity,order.date,item.price,item.quantity*item.price].join(';'));
-                });
-            });
+            this.showToast('⏳ Preparing export...');
+            const clean=(txt)=>String(txt||'').replace(/;/g,' ').replace(/[\r\n]+/g,' ').trim();
+            const rows=[['Order ID','Customer Name','Phone','Shipping Address','Product Name','Quantity','Unit Price','Total Price','Status','Date'].join(';')];
+            // Fetch items untuk setiap order
+            for (const order of filteredOrders) {
+                try {
+                    const res = await apiCall(`/api/admin/orders/${order.id}`);
+                    const items = res.items || res.order_items || [];
+                    if (items.length) {
+                        items.forEach(item => {
+                            const productName = item.product_name || item.name || 'Unknown';
+                            rows.push([
+                                clean(order.id),
+                                clean(order.customerName),
+                                clean(order.phone||res.phone||''),
+                                clean(order.shippingAddress||res.shipping_address||''),
+                                clean(productName),
+                                item.quantity,
+                                item.price,
+                                item.quantity * item.price,
+                                clean(order.status),
+                                clean(order.date)
+                            ].join(';'));
+                        });
+                    } else {
+                        // Order tanpa items — tetap masuk CSV
+                        rows.push([clean(order.id),clean(order.customerName),clean(order.phone||''),clean(order.shippingAddress||''),'—','—',order.total,order.total,clean(order.status),clean(order.date)].join(';'));
+                    }
+                } catch(e) {
+                    console.warn('Failed to fetch order', order.id, e);
+                }
+            }
             const csvContent='\uFEFF'+rows.join('\n');
             const blob=new Blob([csvContent],{type:'text/csv;charset=utf-8;'});
             const url=URL.createObjectURL(blob), link=document.createElement('a');
