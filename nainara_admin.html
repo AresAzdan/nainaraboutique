@@ -1341,7 +1341,7 @@
     <div id="toast" class="toast">Action Successful</div>
 
     <script>
-    const API_BASE = 'https://nainaraboutique.com';
+    const API_BASE = 'http://localhost:3000';
 
     function getToken() { return sessionStorage.getItem('nainara_token'); }
 
@@ -1431,7 +1431,7 @@
                 ]);
                 const rawProducts = Array.isArray(products) ? products : (products?.data || []);
                 this.data.products = rawProducts.map(p => ({ ...p, categoryId: p.category_id ?? p.categoryId, image: p.images?.[0] || p.image_url || p.image || null, images: p.images || (p.image_url ? [p.image_url] : []), sizes: p.sizes || (p.size ? p.size.split(',').map(s=>s.trim()) : ['All Size']), size_stocks: p.size_stocks || {} }));
-                this.data.orders     = (Array.isArray(orders) ? orders : (orders?.data || [])).map(o => ({
+                this.data.orders     = (Array.isArray(orders) ? orders : (orders?.orders || orders?.data || [])).map(o => ({
                     ...o,
                     customerName: o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
@@ -1787,7 +1787,7 @@
         refreshOrders: async function() {
             try {
                 const orders = await apiFetch('/api/admin/orders');
-                this.data.orders = (Array.isArray(orders) ? orders : (orders?.data || [])).map(o => ({
+                this.data.orders = (Array.isArray(orders) ? orders : (orders?.orders || orders?.data || [])).map(o => ({
                     ...o,
                     customerName: o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
