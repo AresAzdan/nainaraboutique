@@ -1628,8 +1628,8 @@
             // Fetch items untuk setiap order
             for (const order of filteredOrders) {
                 try {
-                    const res = await apiCall(`/api/admin/orders/${order.id}`);
-                    const items = res.items || res.order_items || [];
+                    const res = await apiFetch(`/api/admin/orders/${order.id}`);
+                    const items = (res && (res.items || res.order_items)) || [];
                     if (items.length) {
                         items.forEach(item => {
                             const productName = item.product_name || item.name || 'Unknown';
