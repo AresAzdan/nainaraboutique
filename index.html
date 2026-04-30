@@ -3712,10 +3712,24 @@
                     shipping_cost: 0,
                     discount_amount: orderPayload.discount_amount || 0,
                     promo_code: orderPayload.promo_code || null,
-                    name: orderPayload.name,
-                    phone: orderPayload.phone,
-                    email: orderPayload.email,
-                    address: orderPayload.address,
+                    // FIX #1: simpan semua field customer info ke localOrder
+                    name:            orderPayload.name,
+                    phone:           orderPayload.phone,
+                    email:           orderPayload.email,
+                    address:         orderPayload.address,
+                    province:        orderPayload.province || '',
+                    city:            orderPayload.city || '',
+                    district:        orderPayload.district || '',
+                    postal_code:     orderPayload.postal_code || '',
+                    // Field dengan nama yang sesuai ekspektasi backend controller
+                    recipientName:   orderPayload.name,
+                    shippingAddress: [
+                        orderPayload.address,
+                        orderPayload.district,
+                        orderPayload.city,
+                        orderPayload.province,
+                        orderPayload.postal_code
+                    ].filter(Boolean).join(', '),
                     items: this.data.cart.map(i => ({
                         product_name: i.name,
                         image_url: i.image_url || i.image || '',
@@ -4745,19 +4759,25 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
                         body: JSON.stringify({
-                            name:             localOrder.name,
-                            phone:            localOrder.phone,
-                            email:            localOrder.email,
-                            address:          localOrder.address || localOrder.shippingAddress || 'Order',
-                            province:         localOrder.province || '-',
-                            city:             localOrder.city || '-',
-                            district:         localOrder.district || '-',
-                            postal_code:      localOrder.postal_code || '',
+                            // FIX #2: kirim field dengan nama yang diexpect controller
+                            recipientName:   localOrder.recipientName   || localOrder.name  || '',
+                            shippingAddress: localOrder.shippingAddress || localOrder.address || '',
+                            phone:           localOrder.phone           || '',
+                            // Tetap kirim field individual untuk keperluan lain (Midtrans, log, dll)
+                            name:            localOrder.name            || '',
+                            email:           localOrder.email           || '',
+                            address:         localOrder.address         || '',
+                            province:        localOrder.province        || '',
+                            city:            localOrder.city            || '',
+                            district:        localOrder.district        || '',
+                            postal_code:     localOrder.postal_code     || '',
                             courier:          'free',
                             shipping_service: 'Free Shipping',
-                            shipping_cost:    localOrder.shipping_cost || 0,
-                            total_amount:     Math.round(localOrder.total_amount),
-                            items:            localOrder.items || []
+                            shippingCost:    localOrder.shipping_cost   || 0,
+                            discountAmount:  localOrder.discount_amount || 0,
+                            promoCode:       localOrder.promo_code      || null,
+                            total_amount:    Math.round(localOrder.total_amount),
+                            items:           localOrder.items           || []
                         })
                     });
 
