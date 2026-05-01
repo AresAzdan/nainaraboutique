@@ -144,7 +144,18 @@
             margin-right: 16px;
         }
 
-        .sidebar-overlay {
+        .delete-confirm-modal { max-width: 420px; padding: 28px; }
+        .delete-confirm-modal h3 { font-size: 18px; font-weight: 700; color: var(--danger); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .delete-confirm-modal p { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5; }
+        .delete-pwd-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border-color); border-radius: 8px; font-size: 14px; font-family: monospace; letter-spacing: 1px; margin-bottom: 6px; }
+        .delete-pwd-input:focus { outline: none; border-color: var(--danger); box-shadow: 0 0 0 2px rgba(239,68,68,0.1); }
+        .delete-pwd-error { font-size: 12px; color: var(--danger); margin-bottom: 16px; min-height: 16px; }
+        .order-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--danger); }
+        .btn-danger-solid { background: var(--danger); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
+        .btn-danger-solid:hover { opacity: 0.85; }
+        .btn-danger-solid:disabled { opacity: 0.5; cursor: not-allowed; }
+
+
             position: fixed;
             top: 0; left: 0;
             width: 100%; height: 100%;
@@ -716,6 +727,11 @@
                     <div class="section-header" style="flex-direction:column;align-items:flex-start;gap:16px;">
                         <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
                             <div class="section-title">All Orders Management</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <button id="btn-select-all-orders" class="btn-secondary" onclick="app.toggleSelectAllOrders()" style="font-size:13px;"><i class="ph ph-check-square"></i> Select All</button>
+                                <button id="btn-delete-selected-orders" class="btn-danger-solid" onclick="app.promptDeleteSelectedOrders()" style="display:none;font-size:13px;"><i class="ph ph-trash"></i> Delete Selected (<span id="delete-count">0</span>)</button>
+                                <button class="btn-danger-solid" onclick="app.promptDeleteAllOrders()" style="font-size:13px;background:#7f1d1d;"><i class="ph ph-trash"></i> Clear All</button>
+                            </div>
                         </div>
                         <div style="background:#f9fafb;padding:16px;border-radius:8px;border:1px solid var(--border-color);width:100%;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;">
                             <div style="flex:1;min-width:200px;">
@@ -738,7 +754,7 @@
                         </div>
                     </div>
                     <table class="table-container table-hover">
-                        <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Status</th><th>Total</th></tr></thead>
+                        <thead><tr><th style="width:40px;"><input type="checkbox" id="master-order-checkbox" class="order-checkbox" onchange="app.masterCheckboxChange(this)"></th><th>Order ID</th><th>Customer</th><th>Date</th><th>Status</th><th>Total</th></tr></thead>
                         <tbody id="orders-table-body"></tbody>
                     </table>
                 </div>
@@ -1435,6 +1451,7 @@
                     ...o,
                     customerName: o.recipient_name || o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
+                    created_at_raw: o.created_at || o.date || '',
                     total: parseFloat(o.total_amount) || parseFloat(o.total) || 0,
                     status: o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1).replace('_', ' ') : 'Pending',
                     phone: o.phone || o.user_email || '-',
@@ -1618,7 +1635,9 @@
             else if (this.exportFilter==='custom') { startDate=new Date(document.getElementById('export-start').value); endDate=new Date(document.getElementById('export-end').value); fileNamePrefix=`orders-${startDate.toISOString().split('T')[0]}-to-${endDate.toISOString().split('T')[0]}`; }
             const filteredOrders=this.data.orders.filter(order => {
                 if (this.exportFilter==='all') return true;
-                const o=new Date(new Date(order.date).setHours(0,0,0,0)), s=new Date(startDate.setHours(0,0,0,0)), e=new Date(endDate.setHours(0,0,0,0));
+                // Use created_at_raw (ISO string) for reliable parsing; fall back to display date
+                const rawDate = order.created_at_raw || order.date;
+                const o=new Date(new Date(rawDate).setHours(0,0,0,0)), s=new Date(startDate.setHours(0,0,0,0)), e=new Date(endDate.setHours(0,0,0,0));
                 return o>=s && o<=e;
             });
             if (!filteredOrders.length) { this.showToast('No orders in selected range'); return; }
@@ -1630,6 +1649,20 @@
                 try {
                     const res = await apiFetch(`/api/admin/orders/${order.id}`);
                     const items = (res && (res.items || res.order_items)) || [];
+                    // Build a proper date string: use created_at_raw (ISO) → format to YYYY-MM-DD for Excel compatibility
+                    const rawDate = order.created_at_raw || order.date || '';
+                    let csvDate = '';
+                    if (rawDate) {
+                        const d = new Date(rawDate);
+                        if (!isNaN(d)) {
+                            const yyyy = d.getFullYear();
+                            const mm = String(d.getMonth()+1).padStart(2,'0');
+                            const dd = String(d.getDate()).padStart(2,'0');
+                            csvDate = `${yyyy}-${mm}-${dd}`;
+                        } else {
+                            csvDate = rawDate;
+                        }
+                    }
                     if (items.length) {
                         items.forEach(item => {
                             const productName = item.product_name || item.name || 'Unknown';
@@ -1643,12 +1676,12 @@
                                 item.price,
                                 item.quantity * item.price,
                                 clean(order.status),
-                                clean(order.date)
+                                csvDate
                             ].join(';'));
                         });
                     } else {
                         // Order tanpa items — tetap masuk CSV
-                        rows.push([clean(order.id),clean(order.customerName),clean(order.phone||''),clean(order.shippingAddress||''),'—','—',order.total,order.total,clean(order.status),clean(order.date)].join(';'));
+                        rows.push([clean(order.id),clean(order.customerName),clean(order.phone||''),clean(order.shippingAddress||''),'—','—',order.total,order.total,clean(order.status),csvDate].join(';'));
                     }
                 } catch(e) {
                     console.warn('Failed to fetch order', order.id, e);
@@ -1814,6 +1847,7 @@
                     ...o,
                     customerName: o.recipient_name || o.user_name || o.customerName || 'Unknown',
                     date: o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : (o.date || ''),
+                    created_at_raw: o.created_at || o.date || '',
                     total: parseFloat(o.total_amount) || parseFloat(o.total) || 0,
                     status: o.status ? o.status.charAt(0).toUpperCase() + o.status.slice(1).replace('_', ' ') : 'Pending',
                     phone: o.phone || o.user_email || '-',
@@ -1830,9 +1864,13 @@
 
         renderOrders: function() {
             const tbody=document.getElementById('orders-table-body'); tbody.innerHTML='';
-            if (!this.data.orders.length) { tbody.innerHTML=`<tr><td colspan="5" style="text-align:center;padding:24px;">No orders found.</td></tr>`; return; }
+            // Reset master checkbox & delete button
+            const masterCb = document.getElementById('master-order-checkbox');
+            if (masterCb) masterCb.checked = false;
+            this._updateDeleteSelectedBtn();
+            if (!this.data.orders.length) { tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;padding:24px;">No orders found.</td></tr>`; return; }
             this.data.orders.forEach(order => {
-                tbody.innerHTML+=`<tr onclick="app.viewOrderDetail('${order.id}')"><td data-label="Order ID">${order.id}</td><td data-label="Customer">${order.customerName}${order.isPickup ? ' <span style="font-size:10px;background:#fff7ed;color:#b45309;border:1px solid #f0a500;border-radius:4px;padding:1px 5px;font-weight:700;">PICKUP</span>' : ''}</td><td data-label="Date">${order.date}</td><td data-label="Status">${this.getStatusBadge(order.status)}</td><td data-label="Total">${this.formatPrice(order.total)}</td></tr>`;
+                tbody.innerHTML+=`<tr><td onclick="event.stopPropagation()"><input type="checkbox" class="order-checkbox order-row-cb" data-order-id="${order.id}" onchange="app._updateDeleteSelectedBtn()"></td><td data-label="Order ID" onclick="app.viewOrderDetail('${order.id}')" style="cursor:pointer;">${order.id}</td><td data-label="Customer" onclick="app.viewOrderDetail('${order.id}')" style="cursor:pointer;">${order.customerName}${order.isPickup ? ' <span style="font-size:10px;background:#fff7ed;color:#b45309;border:1px solid #f0a500;border-radius:4px;padding:1px 5px;font-weight:700;">PICKUP</span>' : ''}</td><td data-label="Date" onclick="app.viewOrderDetail('${order.id}')" style="cursor:pointer;">${order.date}</td><td data-label="Status" onclick="app.viewOrderDetail('${order.id}')" style="cursor:pointer;">${this.getStatusBadge(order.status)}</td><td data-label="Total" onclick="app.viewOrderDetail('${order.id}')" style="cursor:pointer;">${this.formatPrice(order.total)}</td></tr>`;
             });
         },
 
@@ -3094,6 +3132,81 @@ renderProductSelector: function() {
             } catch (err) { this.showToast('⚠️ '+err.message); }
         },
 
+        // ── DELETE ORDER FEATURE ───────────────────────────────────────
+        _deleteOrderIds: [],
+
+        _updateDeleteSelectedBtn: function() {
+            const checkboxes = document.querySelectorAll('.order-row-cb:checked');
+            const count = checkboxes.length;
+            const btn = document.getElementById('btn-delete-selected-orders');
+            const countEl = document.getElementById('delete-count');
+            if (btn) btn.style.display = count > 0 ? 'inline-flex' : 'none';
+            if (countEl) countEl.textContent = count;
+        },
+
+        masterCheckboxChange: function(masterCb) {
+            document.querySelectorAll('.order-row-cb').forEach(cb => { cb.checked = masterCb.checked; });
+            this._updateDeleteSelectedBtn();
+        },
+
+        toggleSelectAllOrders: function() {
+            const masterCb = document.getElementById('master-order-checkbox');
+            if (masterCb) { masterCb.checked = !masterCb.checked; this.masterCheckboxChange(masterCb); }
+        },
+
+        promptDeleteSelectedOrders: function() {
+            const checked = document.querySelectorAll('.order-row-cb:checked');
+            if (!checked.length) { this.showToast('No orders selected.'); return; }
+            this._deleteOrderIds = Array.from(checked).map(cb => cb.dataset.orderId);
+            document.getElementById('delete-order-count-msg').textContent = `${this._deleteOrderIds.length} order(s) selected`;
+            document.getElementById('delete-order-modal').classList.remove('hidden');
+            document.getElementById('delete-order-pwd').value = '';
+            document.getElementById('delete-order-pwd-error').textContent = '';
+        },
+
+        promptDeleteAllOrders: function() {
+            if (!this.data.orders.length) { this.showToast('No orders to delete.'); return; }
+            this._deleteOrderIds = this.data.orders.map(o => String(o.id));
+            document.getElementById('delete-order-count-msg').textContent = `ALL ${this._deleteOrderIds.length} order(s)`;
+            document.getElementById('delete-order-modal').classList.remove('hidden');
+            document.getElementById('delete-order-pwd').value = '';
+            document.getElementById('delete-order-pwd-error').textContent = '';
+        },
+
+        cancelDeleteOrderModal: function() {
+            this._deleteOrderIds = [];
+            document.getElementById('delete-order-modal').classList.add('hidden');
+        },
+
+        confirmDeleteOrders: async function() {
+            const pwd = document.getElementById('delete-order-pwd').value;
+            const errEl = document.getElementById('delete-order-pwd-error');
+            if (pwd !== '18_Maysarah') {
+                errEl.textContent = 'Incorrect password. Deletion cancelled.';
+                document.getElementById('delete-order-pwd').style.borderColor = 'var(--danger)';
+                return;
+            }
+            errEl.textContent = '';
+            const ids = this._deleteOrderIds;
+            let successCount = 0;
+            for (const id of ids) {
+                try {
+                    await apiFetch('/api/admin/orders/' + id, { method: 'DELETE' });
+                    successCount++;
+                } catch(e) {
+                    console.warn('Failed to delete order', id, e);
+                }
+                // Remove from local data regardless (frontend cleanup)
+                this.data.orders = this.data.orders.filter(o => String(o.id) !== String(id));
+            }
+            this.cancelDeleteOrderModal();
+            this.renderOrders();
+            this.renderDashboard();
+            this.addActivityLog('Orders Deleted', `${successCount} order(s) deleted`, 'orders');
+            this.showToast(`🗑️ ${successCount} order(s) deleted successfully`);
+        },
+        // ── END DELETE ORDER FEATURE ───────────────────────────────────
+
         showToast: function(message) {
             const toast=document.getElementById('toast');
             toast.innerHTML=message; toast.classList.add('show');
@@ -3113,6 +3226,21 @@ renderProductSelector: function() {
 
     window.addEventListener('DOMContentLoaded', () => { app.init(); });
     </script>
+    <!-- Delete Order Confirmation Modal -->
+    <div id="delete-order-modal" class="modal-overlay hidden" onclick="if(event.target===this)app.cancelDeleteOrderModal()">
+        <div class="modal-content delete-confirm-modal">
+            <h3><i class="ph ph-warning-circle" style="font-size:22px;"></i> Delete Orders</h3>
+            <p>Are you sure you want to delete <strong id="delete-order-count-msg"></strong>? This action <strong>cannot be undone</strong>.</p>
+            <div style="margin-bottom:6px;font-size:13px;font-weight:600;color:var(--text-muted);">Enter admin password to confirm deletion:</div>
+            <input type="password" id="delete-order-pwd" class="delete-pwd-input" placeholder="Password" autocomplete="off" onkeydown="if(event.key==='Enter')app.confirmDeleteOrders()">
+            <div id="delete-order-pwd-error" class="delete-pwd-error"></div>
+            <div style="display:flex;gap:10px;">
+                <button type="button" class="btn-secondary" onclick="app.cancelDeleteOrderModal()" style="flex:1;">Cancel</button>
+                <button type="button" class="btn-danger-solid" onclick="app.confirmDeleteOrders()" style="flex:1;justify-content:center;"><i class="ph ph-trash"></i> Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Shipping Tracking Modal (root level so it's always accessible) -->
     <div id="shipping-modal" class="modal-overlay hidden" onclick="if(event.target===this)app.cancelShippingModal()">
         <div class="modal-content" style="max-width:460px;padding:28px;">
