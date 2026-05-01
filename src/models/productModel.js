@@ -18,6 +18,29 @@ const ProductModel = {
     return map;
   },
 
+  // Helper: get active discount percent for a set of product IDs
+  async _getActiveDiscounts(productIds) {
+    if (!productIds.length) return {};
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().slice(0, 8);
+    const { rows } = await db.query(
+      `SELECT dp.product_id, MAX(d.percentage) AS discount_percent
+       FROM discount_products dp
+       JOIN discounts d ON d.id = dp.discount_id
+       WHERE dp.product_id = ANY($1::int[])
+         AND d.start_date <= $2 AND d.end_date >= $2
+         AND d.start_time <= $3 AND d.end_time >= $3
+       GROUP BY dp.product_id`,
+      [productIds, dateStr, timeStr]
+    );
+    const map = {};
+    for (const row of rows) {
+      map[row.product_id] = parseFloat(row.discount_percent);
+    }
+    return map;
+  },
+
   async findAll({ category_id, search, page = 1, limit = 20 } = {}) {
     const offset = (page - 1) * limit;
     const conditions = [];
@@ -47,15 +70,27 @@ const ProductModel = {
 
     const ids = rows.map(r => r.id);
     const imagesMap = await this._getImages(ids);
+    const discountMap = await this._getActiveDiscounts(ids);
 
-    return rows.map(row => ({
-      ...row,
-      images:      imagesMap[row.id] || (row.image_url ? [row.image_url] : []),
-      sizes:       row.sizes       || [],
-      size_stocks: row.size_stocks || {},
-      color:       row.color       || '',
-      weight:      row.weight      || 500,
-    }));
+    return rows.map(row => {
+      const discountPercent = discountMap[row.id] || null;
+      const originalPrice   = discountPercent ? parseFloat(row.price) : null;
+      const finalPrice      = discountPercent
+        ? Math.round(parseFloat(row.price) * (1 - discountPercent / 100))
+        : parseFloat(row.price);
+      return {
+        ...row,
+        images:           imagesMap[row.id] || (row.image_url ? [row.image_url] : []),
+        sizes:            row.sizes       || [],
+        size_stocks:      row.size_stocks || {},
+        color:            row.color       || '',
+        weight:           row.weight      || 500,
+        discount:         discountPercent ? `${discountPercent}%` : null,
+        discount_percent: discountPercent,
+        original_price:   originalPrice,
+        price:            finalPrice,
+      };
+    });
   },
 
   async findById(id) {
@@ -69,13 +104,24 @@ const ProductModel = {
     if (!rows[0]) return null;
 
     const imagesMap = await this._getImages([rows[0].id]);
+    const discountMap = await this._getActiveDiscounts([rows[0].id]);
+    const discountPercent = discountMap[rows[0].id] || null;
+    const originalPrice   = discountPercent ? parseFloat(rows[0].price) : null;
+    const finalPrice      = discountPercent
+      ? Math.round(parseFloat(rows[0].price) * (1 - discountPercent / 100))
+      : parseFloat(rows[0].price);
+
     return {
       ...rows[0],
-      images:      imagesMap[rows[0].id] || (rows[0].image_url ? [rows[0].image_url] : []),
-      sizes:       rows[0].sizes       || [],
-      size_stocks: rows[0].size_stocks || {},
-      color:       rows[0].color       || '',
-      weight:      rows[0].weight      || 500,
+      images:           imagesMap[rows[0].id] || (rows[0].image_url ? [rows[0].image_url] : []),
+      sizes:            rows[0].sizes       || [],
+      size_stocks:      rows[0].size_stocks || {},
+      color:            rows[0].color       || '',
+      weight:           rows[0].weight      || 500,
+      discount:         discountPercent ? `${discountPercent}%` : null,
+      discount_percent: discountPercent,
+      original_price:   originalPrice,
+      price:            finalPrice,
     };
   },
 
