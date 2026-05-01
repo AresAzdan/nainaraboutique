@@ -2530,7 +2530,7 @@
         getWIBDate: function() { const now=new Date(); return new Date(now.getTime()+(now.getTimezoneOffset()+420)*60000); },
 
         isEventActive: function(event) {
-            if (!this.settings.enableDiscounts||!event.isActive) return false;
+            if (!this.settings.enableDiscounts) return false;
             if (this.isPreviewMode) return true;
             const nowWIB=this.getWIBDate(), currentDateStr=nowWIB.toISOString().split('T')[0], currentTimeStr=nowWIB.toTimeString().slice(0,5);
             if (currentDateStr<event.startDate||currentDateStr>event.endDate) return false;
