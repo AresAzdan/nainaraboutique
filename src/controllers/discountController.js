@@ -4,10 +4,28 @@ const { createError } = require('../middleware/errorHandler');
 // GET /api/admin/discounts
 const getAllDiscounts = async (req, res, next) => {
   try {
-    const result = await db.query(
-      'SELECT * FROM discounts ORDER BY start_date DESC'
-    );
-    res.json(result.rows);
+    const result = await db.query('SELECT * FROM discounts ORDER BY start_date DESC');
+    const discounts = result.rows;
+
+    // Attach productIds to each discount
+    const dpResult = await db.query('SELECT discount_id, product_id FROM discount_products');
+    const dpMap = {};
+    for (const row of dpResult.rows) {
+      if (!dpMap[row.discount_id]) dpMap[row.discount_id] = [];
+      dpMap[row.discount_id].push(row.product_id);
+    }
+
+    const enriched = discounts.map(d => ({
+      ...d,
+      discountPercent: parseFloat(d.percentage),
+      startDate: d.start_date,
+      endDate:   d.end_date,
+      startTime: d.start_time,
+      endTime:   d.end_time,
+      productIds: dpMap[d.id] || [],
+    }));
+
+    res.json(enriched);
   } catch (err) {
     next(err);
   }
@@ -18,19 +36,20 @@ const createDiscount = async (req, res, next) => {
   try {
     const {
       name,
-      discountPercent,   // frontend sends "discountPercent"
-      percentage,        // fallback if sent as "percentage"
+      discountPercent,
+      percentage,
       startDate,
       endDate,
       startTime = '00:00:00',
       endTime   = '23:59:59',
+      productIds = [],
     } = req.body;
 
     const pct = discountPercent ?? percentage;
-    if (!name)              throw createError(400, 'Name is required.');
-    if (!pct)               throw createError(400, 'Discount percentage is required.');
-    if (!startDate)         throw createError(400, 'Start date is required.');
-    if (!endDate)           throw createError(400, 'End date is required.');
+    if (!name)               throw createError(400, 'Name is required.');
+    if (!pct)                throw createError(400, 'Discount percentage is required.');
+    if (!startDate)          throw createError(400, 'Start date is required.');
+    if (!endDate)            throw createError(400, 'End date is required.');
     if (endDate < startDate) throw createError(400, 'End date must be >= start date.');
 
     const result = await db.query(
@@ -39,8 +58,19 @@ const createDiscount = async (req, res, next) => {
        RETURNING *`,
       [name, pct, startDate, endDate, startTime, endTime]
     );
+    const discount = result.rows[0];
 
-    res.status(201).json({ message: 'Discount created.', discount: result.rows[0] });
+    // Save product associations into discount_products
+    if (Array.isArray(productIds) && productIds.length > 0) {
+      for (const productId of productIds) {
+        await db.query(
+          'INSERT INTO discount_products (discount_id, product_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [discount.id, productId]
+        );
+      }
+    }
+
+    res.status(201).json({ message: 'Discount created.', discount: { ...discount, productIds } });
   } catch (err) {
     next(err);
   }
