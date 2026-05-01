@@ -70,7 +70,18 @@ const createDiscount = async (req, res, next) => {
       }
     }
 
-    res.status(201).json({ message: 'Discount created.', discount: { ...discount, productIds } });
+    res.status(201).json({
+      message: 'Discount created.',
+      discount: {
+        ...discount,
+        discountPercent: parseFloat(discount.percentage),
+        startDate:  discount.start_date,
+        endDate:    discount.end_date,
+        startTime:  discount.start_time,
+        endTime:    discount.end_time,
+        productIds,
+      }
+    });
   } catch (err) {
     next(err);
   }
@@ -112,7 +123,34 @@ const updateDiscount = async (req, res, next) => {
     );
 
     if (!result.rows.length) throw createError(404, 'Discount not found.');
-    res.json({ message: 'Discount updated.', discount: result.rows[0] });
+    const updated = result.rows[0];
+
+    // Update productIds if provided
+    if (Array.isArray(productIds)) {
+      await db.query('DELETE FROM discount_products WHERE discount_id = $1', [updated.id]);
+      for (const productId of productIds) {
+        await db.query(
+          'INSERT INTO discount_products (discount_id, product_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [updated.id, productId]
+        );
+      }
+    }
+    const currentProductIds = Array.isArray(productIds)
+      ? productIds
+      : (await db.query('SELECT product_id FROM discount_products WHERE discount_id = $1', [updated.id])).rows.map(r => r.product_id);
+
+    res.json({
+      message: 'Discount updated.',
+      discount: {
+        ...updated,
+        discountPercent: parseFloat(updated.percentage),
+        startDate:  updated.start_date,
+        endDate:    updated.end_date,
+        startTime:  updated.start_time,
+        endTime:    updated.end_time,
+        productIds: currentProductIds,
+      }
+    });
   } catch (err) {
     next(err);
   }
