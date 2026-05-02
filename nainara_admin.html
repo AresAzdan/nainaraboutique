@@ -2654,7 +2654,6 @@
             this.data.discounts.forEach(evt => {
                 const nowWIB=this.getWIBDate(), currentDateStr=nowWIB.toISOString().split('T')[0], currentTimeStr=nowWIB.toTimeString().slice(0,5);
                 let statusBadge;
-                if (currentDateStr>evt.endDate
                 if (currentDateStr>evt.endDate||(currentDateStr===evt.endDate&&currentTimeStr>evt.endTime)) statusBadge=`<span class="badge badge-danger">Expired</span>`;
                 else if (currentDateStr<evt.startDate||(currentDateStr===evt.startDate&&currentTimeStr<evt.startTime)) statusBadge=`<span class="badge badge-warning">Upcoming</span>`;
                 else statusBadge=`<span class="badge badge-success">Active</span>`;
