@@ -448,14 +448,36 @@
         .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; }
         .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
         .prod-card-e:hover .prod-img-box img { transform: scale(1.05); }
-        
+
+        /* Discount badge — overlay top-right corner of image */
+        .prod-discount-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 2;
+            background-color: #e05555;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.8rem;
+            letter-spacing: 0.3px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            line-height: 1;
+            box-shadow: 0 2px 8px rgba(224, 85, 85, 0.45);
+            pointer-events: none;
+        }
+
         .prod-meta { text-align: left; display: flex; flex-direction: column; flex-grow: 1; }
         .prod-meta-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
         .prod-cat { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--secondary-text); display: block; margin-bottom: 0; }
         .prod-rating { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 600; color: var(--text-color); }
         .prod-rating i { color: #FFD700; font-size: 0.8rem; }
         .prod-title { font-family: var(--font-body); font-size: 1.05rem; font-weight: 400; color: var(--text-color); margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; word-break: break-word; }
-        .prod-price { font-family: var(--font-body); font-weight: 600; font-size: 1rem; color: var(--text-color); }
+
+        /* Price section */
+        .prod-price-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .prod-price { font-family: var(--font-body); font-weight: 700; font-size: 1rem; color: var(--text-color); }
+        .prod-price-old { font-family: var(--font-body); font-size: 0.82rem; font-weight: 400; color: #c9a0a0; text-decoration: line-through; }
         .prod-meta > div:last-child { margin-top: auto; padding-top: 2px; }
 
         /* --- HIGHLIGHT / LANDING GRID STYLES --- */
@@ -628,6 +650,8 @@
             .prod-card-e { width: 100%; margin: 0; }
             .prod-title { font-size: 0.95rem; }
             .prod-price { font-size: 0.95rem; }
+            .prod-price-old { font-size: 0.78rem; }
+            .prod-discount-badge { font-size: 0.75rem; padding: 5px 8px; }
 
             .pagination { margin-top: 40px; padding-top: 30px; gap: 6px; }
             .page-link { width: 36px; height: 36px; font-size: 0.9rem; }
@@ -2594,13 +2618,31 @@
                 this.dom.empty.classList.add('hidden');
 
                 this.dom.grid.innerHTML = paginatedItems.map(p => {
-                    let priceHTML = `<span class="prod-price">${this.formatMoney(p.price)}</span>`;
-                    if(p.originalPrice) priceHTML += `<span style="text-decoration:line-through; color:#ccc; margin-left:8px; font-size:0.9rem;">${this.formatMoney(p.originalPrice)}</span>`;
+                    // Calculate discount pct from originalPrice if discount field is absent
+                    let discountPct = null;
+                    if (p.originalPrice && p.originalPrice > p.price) {
+                        discountPct = Math.round((1 - p.price / p.originalPrice) * 100);
+                    } else if (p.discount) {
+                        // strip non-numeric, e.g. "20%" → 20
+                        const parsed = parseInt(String(p.discount).replace(/[^0-9]/g, ''), 10);
+                        if (!isNaN(parsed) && parsed > 0) discountPct = parsed;
+                    }
+
+                    const badgeHTML = discountPct
+                        ? `<span class="prod-discount-badge">-${discountPct}%</span>`
+                        : '';
+
+                    const priceHTML = `
+                        <div class="prod-price-row">
+                            <span class="prod-price">${this.formatMoney(p.price)}</span>
+                            ${p.originalPrice ? `<span class="prod-price-old">${this.formatMoney(p.originalPrice)}</span>` : ''}
+                        </div>`;
 
                     return `
                     <div class="prod-card-e" onclick="app.navigateTo('product?id=${p.id}')">
                         <div class="prod-img-box">
                             <img src="${p.images?.[0]}" loading="lazy" alt="${p.name || 'Product image'}">
+                            ${badgeHTML}
                         </div>
                         <div class="prod-meta">
                             <div class="prod-meta-header">
@@ -2708,19 +2750,33 @@
                         <section class="recommended-products">
                             <h3>${this.t('recommended')}</h3>
                             <div class="recommended-grid">
-                                ${recs.map(r => `
+                                ${recs.map(r => {
+                                    let rDiscPct = null;
+                                    if (r.originalPrice && r.originalPrice > r.price) {
+                                        rDiscPct = Math.round((1 - r.price / r.originalPrice) * 100);
+                                    } else if (r.discount) {
+                                        const pd = parseInt(String(r.discount).replace(/[^0-9]/g, ''), 10);
+                                        if (!isNaN(pd) && pd > 0) rDiscPct = pd;
+                                    }
+                                    return `
                                     <div class="prod-card-e" onclick="app.navigateTo('product?id=${r.id}')">
-                                        <div class="prod-img-box"><img src="${r.images[0]}" loading="lazy" alt="${r.name || 'Product image'}"></div>
+                                        <div class="prod-img-box">
+                                            <img src="${r.images[0]}" loading="lazy" alt="${r.name || 'Product image'}">
+                                            ${rDiscPct ? `<span class="prod-discount-badge">-${rDiscPct}%</span>` : ''}
+                                        </div>
                                         <div class="prod-meta">
                                             <div class="prod-meta-header">
                                                 <span class="prod-cat">${r.category}</span>
                                                 <div class="prod-rating"><i class="fa-solid fa-star"></i> ${r.rating}</div>
                                             </div>
                                             <h3 class="prod-title">${r.name}</h3>
-                                            <div class="prod-price">${this.formatMoney(r.price)}</div>
+                                            <div class="prod-price-row">
+                                                <span class="prod-price">${this.formatMoney(r.price)}</span>
+                                                ${r.originalPrice ? `<span class="prod-price-old">${this.formatMoney(r.originalPrice)}</span>` : ''}
+                                            </div>
                                         </div>
-                                    </div>
-                                `).join('')}
+                                    </div>`;
+                                }).join('')}
                             </div>
                         </section>
                     `;
