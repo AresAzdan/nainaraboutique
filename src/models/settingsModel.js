@@ -1,13 +1,17 @@
 const db = require('../config/db');
 
-const SettingsModel = {
-  async get(key) {
-    const { rows } = await db.query(
-      'SELECT value FROM site_settings WHERE key = $1',
-      [key]
-    );
-    return rows[0]?.value || null;
-  },
+async get(key) {
+  const { rows } = await db.query(
+    'SELECT value FROM site_settings WHERE key = $1',
+    [key]
+  );
+  if (!rows[0]?.value) return null;
+  try {
+    return JSON.parse(rows[0].value);
+  } catch {
+    return rows[0].value;
+  }
+},
 
   async set(key, value) {
     const { rows } = await db.query(
