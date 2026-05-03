@@ -32,6 +32,14 @@ const ReviewModel = {
        RETURNING *`,
       [productId, userId, orderId || null, rating, reviewText || '']
     );
+    // Sync average_rating and total_reviews to products table
+    await db.query(
+      `UPDATE products SET
+         average_rating = COALESCE((SELECT ROUND(AVG(rating)::NUMERIC, 2) FROM product_reviews WHERE product_id = $1), 0),
+         total_reviews  = (SELECT COUNT(*) FROM product_reviews WHERE product_id = $1)
+       WHERE id = $1`,
+      [productId]
+    );
     return rows[0];
   },
 
