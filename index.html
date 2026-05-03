@@ -532,6 +532,48 @@
         .pd-stars { color: #000; font-size: 0.8rem; display: flex; align-items: center; gap: 2px; }
         .pd-reviews-count { font-size: 0.8rem; color: #666; margin-left: 8px; text-decoration: underline; cursor: pointer; }
 
+        /* ── Review Modal ── */
+        .review-modal-overlay { position:fixed;inset:0;background:rgba(48,39,24,0.45);backdrop-filter:blur(4px);z-index:9000;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.3s ease; }
+        .review-modal-overlay.active { opacity:1;pointer-events:auto; }
+        .review-modal { background:var(--white);width:100%;max-width:680px;border-radius:20px 20px 0 0;padding:32px 32px 48px;max-height:90vh;overflow-y:auto;transform:translateY(40px);transition:transform 0.35s cubic-bezier(0.165,0.84,0.44,1); }
+        .review-modal-overlay.active .review-modal { transform:translateY(0); }
+        .review-modal-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:24px; }
+        .review-modal-header h2 { font-family:var(--font-heading);font-size:1.5rem;font-weight:400;color:var(--text-color); }
+        .review-modal-close { width:36px;height:36px;border-radius:50%;border:1px solid var(--border-color);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--secondary-text);font-size:1rem;transition:var(--transition); }
+        .review-modal-close:hover { background:var(--bg-color);color:var(--text-color); }
+        .rv-summary { display:flex;align-items:center;gap:24px;padding:20px;background:var(--bg-color);border-radius:12px;margin-bottom:24px; }
+        .rv-big-score { font-family:var(--font-heading);font-size:3rem;line-height:1;color:var(--text-color);flex-shrink:0; }
+        .rv-summary-right { flex:1; }
+        .rv-stars-row { display:flex;gap:3px;margin-bottom:4px; }
+        .rv-stars-row i { font-size:1rem; }
+        .rv-count { font-size:0.8rem;color:var(--secondary-text);letter-spacing:0.5px; }
+        .rv-card { padding:18px 0;border-bottom:1px solid var(--border-color); }
+        .rv-card:last-child { border-bottom:none; }
+        .rv-card-head { display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px; }
+        .rv-author { font-size:0.9rem;font-weight:600;color:var(--text-color); }
+        .rv-date { font-size:0.75rem;color:var(--secondary-text); }
+        .rv-star-mini { display:flex;gap:2px;margin-bottom:8px; }
+        .rv-star-mini i { font-size:0.78rem; }
+        .rv-comment { font-size:0.88rem;color:var(--secondary-text);line-height:1.65;margin:0; }
+        .rv-empty { text-align:center;padding:40px 20px; }
+        .rv-empty-icon { font-size:2.5rem;color:var(--border-color);margin-bottom:16px; }
+        .rv-empty h4 { font-family:var(--font-heading);font-weight:400;font-size:1.1rem;color:var(--text-color);margin-bottom:6px; }
+        .rv-empty p { font-size:0.85rem;color:var(--secondary-text); }
+        .rv-form-section { margin-top:28px;padding-top:28px;border-top:1px solid var(--border-color); }
+        .rv-form-section h3 { font-family:var(--font-heading);font-size:1.15rem;font-weight:400;margin-bottom:18px;color:var(--text-color); }
+        .star-picker { display:flex;gap:6px;margin-bottom:18px;flex-direction:row-reverse;justify-content:flex-end; }
+        .star-picker input { display:none; }
+        .star-picker label { font-size:1.6rem;color:#ddd;cursor:pointer;transition:color 0.15s,transform 0.15s; }
+        .star-picker label:hover,.star-picker label:hover ~ label,.star-picker input:checked ~ label { color:#f0c14b; }
+        .star-picker label:hover { transform:scale(1.2); }
+        .rv-textarea { width:100%;min-height:100px;border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;font-family:var(--font-body);font-size:0.9rem;color:var(--text-color);background:var(--white);resize:vertical;outline:none;transition:border-color 0.2s;margin-bottom:14px; }
+        .rv-textarea:focus { border-color:var(--accent-color); }
+        .rv-submit-btn { width:100%;padding:14px;background:var(--text-color);color:var(--white);border:none;border-radius:8px;font-family:var(--font-body);font-size:0.9rem;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:var(--transition); }
+        .rv-submit-btn:hover { background:var(--accent-color); }
+        .rv-submit-btn:disabled { opacity:0.5;cursor:not-allowed; }
+        .rv-load-more { display:block;width:100%;margin-top:16px;padding:11px;border:1px solid var(--border-color);border-radius:8px;background:transparent;font-family:var(--font-body);font-size:0.85rem;color:var(--secondary-text);cursor:pointer;transition:var(--transition); }
+        .rv-load-more:hover { border-color:var(--text-color);color:var(--text-color); }
+
         .pd-option-group { margin-bottom: 25px; }
         .pd-option-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
         .pd-size-guide-link { text-decoration: underline; color: #666; cursor: pointer; font-weight: 400; font-size: 0.75rem; }
@@ -2647,7 +2689,7 @@
                         <div class="prod-meta">
                             <div class="prod-meta-header">
                                 <span class="prod-cat">${p.category}</span>
-                                <div class="prod-rating"><i class="fa-solid fa-star"></i> ${p.rating}</div>
+                                <div class="prod-rating"><i class="fa-solid fa-star"></i> ${p.average_rating > 0 ? parseFloat(p.average_rating).toFixed(1) : p.rating || '—'}${p.total_reviews > 0 ? ` <span style="font-weight:400;color:var(--secondary-text);font-size:0.75rem;">(${p.total_reviews})</span>` : ''}</div>
                             </div>
                             <h3 class="prod-title">${p.name}</h3>
                             <div>${priceHTML}</div>
@@ -2809,9 +2851,11 @@
                             <div class="pd-price-row">
                                 <span class="pd-price-current">${this.formatMoney(p.price)}</span>
                                 ${p.originalPrice ? `<span class="pd-price-old">${this.formatMoney(p.originalPrice)}</span>` : ''}
-                                <div class="pd-stars">
-                                    <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star-half-stroke"></i>
-                                    <span class="pd-reviews-count">12 ${this.t('reviews')}</span>
+                                <div class="pd-stars" id="pd-stars-${p.id}">
+                                    <span id="pd-stars-icons-${p.id}">${this.renderStars(p.average_rating || 0)}</span>
+                                    <span class="pd-reviews-count" id="pd-review-count-${p.id}" onclick="app.openReviewModal(${p.id})" title="Lihat semua ulasan">
+                                        ${(p.total_reviews || 0) === 0 ? 'Belum ada review' : `${p.total_reviews} ${this.t('reviews')}`}
+                                    </span>
                                 </div>
                             </div>
 
@@ -2875,14 +2919,117 @@
                         </div>
                     </div>
                     ${recsHTML}
-                    <section style="margin-top:60px;padding-top:40px;border-top:1px solid rgba(0,0,0,0.05);">
-                        <h3 style="font-family:var(--font-heading);font-size:2rem;text-align:center;margin-bottom:32px;">Customer Reviews</h3>
-                        <div id="product-reviews-section" style="max-width:600px;margin:0 auto;">
-                            <p style="text-align:center;color:var(--secondary-text);">Loading reviews...</p>
-                        </div>
+                    <section style="margin-top:60px;padding-top:40px;border-top:1px solid rgba(0,0,0,0.05);text-align:center;">
+                        <h3 style="font-family:var(--font-heading);font-size:2rem;margin-bottom:16px;">Ulasan Pelanggan</h3>
+                        <div id="pd-inline-rating-${p.id}" style="display:flex;justify-content:center;margin-bottom:24px;"></div>
+                        <button
+                            onclick="app.openReviewModal(${p.id})"
+                            style="padding:12px 32px;border:1px solid var(--text-color);background:transparent;font-family:var(--font-body);font-size:0.85rem;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:4px;transition:all 0.3s ease;"
+                            onmouseover="this.style.background='var(--text-color)';this.style.color='#fff'"
+                            onmouseout="this.style.background='transparent';this.style.color='inherit'"
+                        >
+                            Lihat Semua Ulasan &amp; Beri Review
+                        </button>
                     </section>
                 `;
                 this.loadProductReviews(p.id);
+            },
+
+            // ── Review System ──────────────────────────────────────────────
+            renderStars(avg) {
+                const rounded = Math.round((avg || 0) * 2) / 2;
+                return Array.from({length:5}, (_,i) => {
+                    const full = i+1 <= rounded, half = !full && i+0.5 === rounded;
+                    const cls = full ? 'fa-solid fa-star' : half ? 'fa-solid fa-star-half-stroke' : 'fa-regular fa-star';
+                    const color = (full||half) ? '#f0c14b' : '#ddd';
+                    return `<i class="${cls}" style="color:${color};font-size:0.82rem;"></i>`;
+                }).join('');
+            },
+
+            escapeHTML(str) {
+                return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+            },
+
+            openReviewModal(productId) {
+                this._reviewProductId = productId;
+                this._reviewPage = 1;
+                const overlay = document.getElementById('review-modal-overlay');
+                if (!overlay) return;
+                overlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                this.renderReviewModal(productId, true);
+            },
+
+            closeReviewModal() {
+                const overlay = document.getElementById('review-modal-overlay');
+                if (overlay) overlay.classList.remove('active');
+                document.body.style.overflow = '';
+            },
+
+            initReviewModal() {
+                const overlay = document.getElementById('review-modal-overlay');
+                if (!overlay) return;
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) this.closeReviewModal(); });
+            },
+
+            async renderReviewModal(productId, resetList) {
+                const body = document.getElementById('review-modal-body');
+                if (!body) return;
+                if (resetList) {
+                    body.innerHTML = `<div style="text-align:center;padding:40px;color:var(--secondary-text);"><i class="fa-solid fa-spinner fa-spin" style="font-size:1.5rem;"></i></div>`;
+                }
+                try {
+                    const page = this._reviewPage || 1;
+                    const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/reviews?page=${page}&limit=8`);
+                    if (!res.ok) throw new Error('Gagal memuat ulasan.');
+                    const data = await res.json();
+
+                    // Update header stars + count
+                    const starsEl = document.getElementById(`pd-stars-icons-${productId}`);
+                    const countEl = document.getElementById(`pd-review-count-${productId}`);
+                    if (starsEl) starsEl.innerHTML = this.renderStars(data.avg_rating);
+                    if (countEl) countEl.textContent = data.review_count === 0 ? 'Belum ada review' : `${data.review_count} ${this.t('reviews')}`;
+
+                    // Update inline section
+                    const inlineEl = document.getElementById(`pd-inline-rating-${productId}`);
+                    if (inlineEl) {
+                        inlineEl.innerHTML = `<div class="rv-summary" style="display:inline-flex;"><div class="rv-big-score">${data.avg_rating > 0 ? parseFloat(data.avg_rating).toFixed(1) : '—'}</div><div class="rv-summary-right"><div class="rv-stars-row">${this.renderStars(data.avg_rating)}</div><div class="rv-count">${data.review_count} ulasan</div></div></div>`;
+                    }
+
+                    const summaryHTML = `<div class="rv-summary"><div class="rv-big-score">${data.avg_rating > 0 ? parseFloat(data.avg_rating).toFixed(1) : '—'}</div><div class="rv-summary-right"><div class="rv-stars-row">${this.renderStars(data.avg_rating)}</div><div class="rv-count">${data.review_count} ulasan</div></div></div>`;
+
+                    const reviewsHTML = data.reviews.length === 0 && page === 1
+                        ? `<div class="rv-empty"><div class="rv-empty-icon"><i class="fa-regular fa-star"></i></div><h4>Belum ada ulasan</h4><p>Jadi yang pertama memberikan ulasan untuk produk ini!</p></div>`
+                        : data.reviews.map(r => {
+                            const date = new Date(r.created_at).toLocaleDateString('id-ID', {day:'numeric',month:'long',year:'numeric'});
+                            return `<div class="rv-card"><div class="rv-card-head"><span class="rv-author">${this.escapeHTML(r.user_name)}</span><span class="rv-date">${date}</span></div><div class="rv-star-mini">${this.renderStars(r.rating)}</div>${r.review_text ? `<p class="rv-comment">${this.escapeHTML(r.review_text)}</p>` : ''}</div>`;
+                          }).join('');
+
+                    const hasMore = page < data.total_pages;
+                    const loadMoreBtn = hasMore ? `<button class="rv-load-more" onclick="app.loadMoreReviews(${productId})">Muat lebih banyak ulasan</button>` : '';
+
+                    const starPicker = [5,4,3,2,1].map(v => `<input type="radio" name="rv-rating-${productId}" id="rv-star-${productId}-${v}" value="${v}"><label for="rv-star-${productId}-${v}" title="${v} bintang"><i class="fa-solid fa-star"></i></label>`).join('');
+
+                    const formHTML = `<div class="rv-form-section"><h3>Tulis Ulasan</h3><div class="star-picker" id="star-picker-${productId}">${starPicker}</div><textarea id="rv-text-${productId}" class="rv-textarea" placeholder="Bagikan pengalaman kamu dengan produk ini... (opsional)" maxlength="1000"></textarea><button class="rv-submit-btn" id="rv-submit-${productId}" onclick="app.submitReview(${productId})">Kirim Ulasan</button></div>`;
+
+                    if (resetList) {
+                        body.innerHTML = summaryHTML + `<div id="rv-list-body">${reviewsHTML}</div>` + loadMoreBtn + formHTML;
+                    } else {
+                        const listEl = document.getElementById('rv-list-body');
+                        if (listEl) listEl.insertAdjacentHTML('beforeend', reviewsHTML);
+                        const oldBtn = body.querySelector('.rv-load-more');
+                        if (oldBtn) oldBtn.remove();
+                        if (hasMore) body.querySelector('.rv-form-section').insertAdjacentHTML('beforebegin', loadMoreBtn);
+                    }
+                } catch(err) {
+                    console.error('[renderReviewModal]', err);
+                    if (resetList) body.innerHTML = `<p style="text-align:center;color:var(--discount-red);padding:40px;">Gagal memuat ulasan. Silakan coba lagi.</p>`;
+                }
+            },
+
+            loadMoreReviews(productId) {
+                this._reviewPage = (this._reviewPage || 1) + 1;
+                this.renderReviewModal(productId, false);
             },
 
             swapMainImage(el, src) {
@@ -4527,49 +4674,48 @@
             // ═══════════════════════════════════════════════════════════════
             async loadProductReviews(productId) {
                 try {
-                    const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/reviews`);
+                    const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/rating`);
                     if (!res.ok) return;
                     const data = await res.json();
-                    const container = document.getElementById('product-reviews-section');
-                    if (!container) return;
-                    const stars = (n) => Array.from({length:5}, (_,i) => `<i class="fa-${i < n ? 'solid' : 'regular'} fa-star" style="color:${i < n ? '#f0c14b' : '#ddd'};font-size:0.85rem;"></i>`).join('');
-                    let html = `<div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
-                        <div style="font-size:2.2rem;font-weight:700;">${data.avg_rating}</div>
-                        <div>${stars(Math.round(data.avg_rating))}<div style="font-size:0.8rem;color:var(--secondary-text);margin-top:2px;">${data.review_count} review${data.review_count !== 1 ? 's' : ''}</div></div>
-                    </div>`;
-                    if (data.reviews.length === 0) {
-                        html += '<p style="color:var(--secondary-text);font-size:0.9rem;">No reviews yet. Be the first to review this product!</p>';
-                    } else {
-                        data.reviews.forEach(r => {
-                            const date = new Date(r.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-                            html += `<div style="border-top:1px solid var(--border-color);padding:16px 0;">
-                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                                    <strong style="font-size:0.9rem;">${r.user_name}</strong>
-                                    <span style="font-size:0.75rem;color:var(--secondary-text);">${date}</span>
-                                </div>
-                                <div style="margin-bottom:6px;">${stars(r.rating)}</div>
-                                ${r.review_text ? `<p style="font-size:0.88rem;color:var(--secondary-text);line-height:1.6;margin:0;">${r.review_text}</p>` : ''}
-                            </div>`;
-                        });
+                    const starsEl = document.getElementById(`pd-stars-icons-${productId}`);
+                    const countEl = document.getElementById(`pd-review-count-${productId}`);
+                    if (starsEl) starsEl.innerHTML = this.renderStars(data.average_rating);
+                    if (countEl) countEl.textContent = data.total_reviews === 0
+                        ? 'Belum ada review'
+                        : `${data.total_reviews} ${this.t('reviews')}`;
+                    // Also refresh inline rating section
+                    const inlineEl = document.getElementById(`pd-inline-rating-${productId}`);
+                    if (inlineEl && data.total_reviews > 0) {
+                        inlineEl.innerHTML = `<div class="rv-summary" style="display:inline-flex;"><div class="rv-big-score">${parseFloat(data.average_rating).toFixed(1)}</div><div class="rv-summary-right"><div class="rv-stars-row">${this.renderStars(data.average_rating)}</div><div class="rv-count">${data.total_reviews} ulasan</div></div></div>`;
                     }
-                    container.innerHTML = html;
-                } catch(e) { console.error('Failed to load reviews:', e); }
+                } catch(e) { console.error('[loadProductReviews]', e); }
             },
 
-            async submitReview(productId, orderId) {
-                const ratingEl = document.querySelector('input[name="review-rating"]:checked');
-                const text = document.getElementById('review-text')?.value || '';
-                if (!ratingEl) { this.showToast('Please select a rating.'); return; }
+            async submitReview(productId) {
+                const ratingEl = document.querySelector(`input[name="rv-rating-${productId}"]:checked`);
+                const textEl   = document.getElementById(`rv-text-${productId}`);
+                const btn      = document.getElementById(`rv-submit-${productId}`);
+                if (!ratingEl) { this.showToast('Pilih dulu berapa bintang untuk produk ini.'); return; }
+                const rating      = parseInt(ratingEl.value, 10);
+                const review_text = textEl?.value?.trim() || '';
+                if (btn) { btn.disabled = true; btn.textContent = 'Mengirim...'; }
                 try {
                     const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/reviews`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
-                        body: JSON.stringify({ rating: parseInt(ratingEl.value), review_text: text, order_id: orderId })
+                        body: JSON.stringify({ rating, review_text })
                     });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data.message);
-                    this.showToast('Review submitted!');
-                    this.loadProductReviews(productId);
-                } catch(e) { this.showToast(e.message); }
+                    if (!res.ok) throw new Error(data.message || 'Terjadi kesalahan.');
+                    this.showToast('Ulasan berhasil dikirim! Terima kasih 🎉');
+                    document.querySelectorAll(`input[name="rv-rating-${productId}"]`).forEach(i => i.checked = false);
+                    if (textEl) textEl.value = '';
+                    this._reviewPage = 1;
+                    this.renderReviewModal(productId, true);
+                } catch(e) {
+                    this.showToast(e.message);
+                } finally {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Kirim Ulasan'; }
+                }
             },
 
             // ═══════════════════════════════════════════════════════════════
@@ -5342,7 +5488,7 @@
 
         window.app = app;
 
-        document.addEventListener('DOMContentLoaded', () => app.init());
+        document.addEventListener('DOMContentLoaded', () => { app.init(); app.initReviewModal(); });
     </script>
 
     <script>
@@ -5560,6 +5706,18 @@
             </span>
         </div>
     </footer>
+    <!-- ═══ REVIEW MODAL ═══ -->
+    <div id="review-modal-overlay" class="review-modal-overlay" role="dialog" aria-modal="true" aria-label="Ulasan produk">
+        <div class="review-modal">
+            <div class="review-modal-header">
+                <h2>Ulasan Pelanggan</h2>
+                <button class="review-modal-close" onclick="app.closeReviewModal()" aria-label="Tutup">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="review-modal-body"></div>
+        </div>
+    </div>
 
 </body>
 </html>
