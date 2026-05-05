@@ -25,12 +25,12 @@ const ReviewModel = {
     return rows;
   },
 
-  async create({ productId, userId, orderId, rating, reviewText }) {
+  async create({ productId, userId, orderId, rating, reviewText, photoUrls = [] }) {
     const { rows } = await db.query(
-      `INSERT INTO product_reviews (product_id, user_id, order_id, rating, review_text)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO product_reviews (product_id, user_id, order_id, rating, review_text, photo_urls)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [productId, userId, orderId || null, rating, reviewText || '']
+      [productId, userId, orderId || null, rating, reviewText || '', JSON.stringify(photoUrls)]
     );
     // Sync average_rating and total_reviews to products table
     await db.query(
