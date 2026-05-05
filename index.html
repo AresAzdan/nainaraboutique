@@ -3002,7 +3002,8 @@
                         ? `<div class="rv-empty"><div class="rv-empty-icon"><i class="fa-regular fa-star"></i></div><h4>Belum ada ulasan</h4><p>Jadi yang pertama memberikan ulasan untuk produk ini!</p></div>`
                         : data.reviews.map(r => {
                             const date = new Date(r.created_at).toLocaleDateString('id-ID', {day:'numeric',month:'long',year:'numeric'});
-                            return `<div class="rv-card"><div class="rv-card-head"><span class="rv-author">${this.escapeHTML(r.user_name)}</span><span class="rv-date">${date}</span></div><div class="rv-star-mini">${this.renderStars(r.rating)}</div>${r.review_text ? `<p class="rv-comment">${this.escapeHTML(r.review_text)}</p>` : ''}</div>`;
+                            const photosHtml = (r.photo_urls && r.photo_urls.length) ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">${r.photo_urls.map(u=>`<img src="${u}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;cursor:pointer;" onclick="window.open('${u}','_blank')">`).join('')}</div>` : '';
+                            return `<div class="rv-card"><div class="rv-card-head"><span class="rv-author">${this.escapeHTML(r.user_name)}</span><span class="rv-date">${date}</span></div><div class="rv-star-mini">${this.renderStars(r.rating)}</div>${r.review_text ? `<p class="rv-comment">${this.escapeHTML(r.review_text)}</p>` : ''}${photosHtml}</div>`;
                           }).join('');
 
                     const hasMore = page < data.total_pages;
@@ -3010,7 +3011,7 @@
 
                     const starPicker = [5,4,3,2,1].map(v => `<input type="radio" name="rv-rating-${productId}" id="rv-star-${productId}-${v}" value="${v}"><label for="rv-star-${productId}-${v}" title="${v} bintang"><i class="fa-solid fa-star"></i></label>`).join('');
 
-                    const formHTML = `<div class="rv-form-section"><h3>Tulis Ulasan</h3><div class="star-picker" id="star-picker-${productId}">${starPicker}</div><textarea id="rv-text-${productId}" class="rv-textarea" placeholder="Bagikan pengalaman kamu dengan produk ini... (opsional)" maxlength="1000"></textarea><button class="rv-submit-btn" id="rv-submit-${productId}" onclick="app.submitReview(${productId})">Kirim Ulasan</button></div>`;
+                    const formHTML = `<div class="rv-form-section"><h3>Tulis Ulasan</h3><div class="star-picker" id="star-picker-${productId}">${starPicker}</div><textarea id="rv-text-${productId}" class="rv-textarea" placeholder="Bagikan pengalaman kamu dengan produk ini... (opsional)" maxlength="1000"></textarea><div style="margin:12px 0;"><label style="font-size:13px;color:var(--secondary-text);display:block;margin-bottom:6px;"><i class="ph ph-camera"></i> Foto (opsional, maks. 3)</label><input type="file" id="rv-photos-${productId}" accept="image/*" multiple style="font-size:13px;width:100%;"></div><button class="rv-submit-btn" id="rv-submit-${productId}" onclick="app.submitReview(${productId})">Kirim Ulasan</button></div>`;
 
                     if (resetList) {
                         body.innerHTML = summaryHTML + `<div id="rv-list-body">${reviewsHTML}</div>` + loadMoreBtn + formHTML;
@@ -4080,9 +4081,12 @@
                             if (remaining <= 0) {
                                 target.textContent = 'Expired';
                                 target.style.color = '#d64045';
-                                target.closest('[style*="fff8f0"]').style.background = '#fff5f5';
-                                target.closest('[style*="fff8f0"]').style.borderColor = 'rgba(214,64,69,0.25)';
-                                target.previousElementSibling.style.color = '#d64045';
+                                const cardEl = target.closest('[style*="fff8f0"]');
+                                if (cardEl) {
+                                    cardEl.style.background = '#fff5f5';
+                                    cardEl.style.borderColor = 'rgba(214,64,69,0.25)';
+                                }
+                                if (target.previousElementSibling) target.previousElementSibling.style.color = '#d64045';
                                 clearInterval(timerId);
                                 return;
                             }
@@ -4692,23 +4696,39 @@
             },
 
             async submitReview(productId) {
-                const ratingEl = document.querySelector(`input[name="rv-rating-${productId}"]:checked`);
-                const textEl   = document.getElementById(`rv-text-${productId}`);
-                const btn      = document.getElementById(`rv-submit-${productId}`);
+                const ratingEl  = document.querySelector(`input[name="rv-rating-${productId}"]:checked`);
+                const textEl    = document.getElementById(`rv-text-${productId}`);
+                const photosEl  = document.getElementById(`rv-photos-${productId}`);
+                const btn       = document.getElementById(`rv-submit-${productId}`);
                 if (!ratingEl) { this.showToast('Pilih dulu berapa bintang untuk produk ini.'); return; }
                 const rating      = parseInt(ratingEl.value, 10);
                 const review_text = textEl?.value?.trim() || '';
                 if (btn) { btn.disabled = true; btn.textContent = 'Mengirim...'; }
                 try {
+                    // Upload photos first if any
+                    let photo_urls = [];
+                    const files = photosEl?.files ? Array.from(photosEl.files).slice(0, 3) : [];
+                    for (const file of files) {
+                        const fd = new FormData();
+                        fd.append('image', file);
+                        const upRes = await fetch('https://nainaraboutique.com/api/upload', {
+                            method: 'POST', headers: { ...this.authHeaders() }, body: fd
+                        });
+                        if (upRes.ok) {
+                            const upData = await upRes.json();
+                            if (upData.url) photo_urls.push(upData.url);
+                        }
+                    }
                     const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/reviews`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
-                        body: JSON.stringify({ rating, review_text })
+                        body: JSON.stringify({ rating, review_text, photo_urls })
                     });
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.message || 'Terjadi kesalahan.');
                     this.showToast('Ulasan berhasil dikirim! Terima kasih 🎉');
-                    document.querySelectorAll(`input[name="rv-rating-${productId}"]`).forEach(i => i.checked = false);
+                    document.querySelectorAll(`input[name="rv-rating-${productId}"]:checked`).forEach(i => i.checked = false);
                     if (textEl) textEl.value = '';
+                    if (photosEl) photosEl.value = '';
                     this._reviewPage = 1;
                     this.renderReviewModal(productId, true);
                 } catch(e) {
