@@ -22,7 +22,7 @@ const getProductReviews = async (req, res, next) => {
 // POST /api/products/:id/reviews — authenticated
 const createReview = async (req, res, next) => {
   try {
-    const { rating, review_text, order_id } = req.body;
+    const { rating, review_text, order_id, photo_urls = [] } = req.body;
     const productId = parseInt(req.params.id);
     const userId = req.user.id;
 
@@ -45,7 +45,8 @@ const createReview = async (req, res, next) => {
     }
 
     const review = await ReviewModel.create({
-      productId, userId, orderId: order_id || orderCheck[0].id, rating, reviewText: review_text || ''
+      productId, userId, orderId: order_id || orderCheck[0].id, rating, reviewText: review_text || '',
+      photoUrls: Array.isArray(photo_urls) ? photo_urls.slice(0, 3) : []
     });
 
     res.status(201).json({ message: 'Review submitted.', review });
