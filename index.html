@@ -4678,19 +4678,23 @@
             // ═══════════════════════════════════════════════════════════════
             async loadProductReviews(productId) {
                 try {
-                    const res = await fetch(`https://nainaraboutique.com/api/products/${productId}/rating`);
+                    // Use /api/products/:id which already returns average_rating & total_reviews
+                    const res = await fetch(`https://nainaraboutique.com/api/products/${productId}`);
                     if (!res.ok) return;
                     const data = await res.json();
+                    const avgRating = parseFloat(data.average_rating) || 0;
+                    const totalReviews = parseInt(data.total_reviews) || 0;
+
                     const starsEl = document.getElementById(`pd-stars-icons-${productId}`);
                     const countEl = document.getElementById(`pd-review-count-${productId}`);
-                    if (starsEl) starsEl.innerHTML = this.renderStars(data.average_rating);
-                    if (countEl) countEl.textContent = data.total_reviews === 0
+                    if (starsEl) starsEl.innerHTML = this.renderStars(avgRating);
+                    if (countEl) countEl.textContent = totalReviews === 0
                         ? 'Belum ada review'
-                        : `${data.total_reviews} ${this.t('reviews')}`;
-                    // Also refresh inline rating section
+                        : `${totalReviews} ${this.t('reviews')}`;
+
                     const inlineEl = document.getElementById(`pd-inline-rating-${productId}`);
-                    if (inlineEl && data.total_reviews > 0) {
-                        inlineEl.innerHTML = `<div class="rv-summary" style="display:inline-flex;"><div class="rv-big-score">${parseFloat(data.average_rating).toFixed(1)}</div><div class="rv-summary-right"><div class="rv-stars-row">${this.renderStars(data.average_rating)}</div><div class="rv-count">${data.total_reviews} ulasan</div></div></div>`;
+                    if (inlineEl && totalReviews > 0) {
+                        inlineEl.innerHTML = `<div class="rv-summary" style="display:inline-flex;"><div class="rv-big-score">${avgRating.toFixed(1)}</div><div class="rv-summary-right"><div class="rv-stars-row">${this.renderStars(avgRating)}</div><div class="rv-count">${totalReviews} ulasan</div></div></div>`;
                     }
                 } catch(e) { console.error('[loadProductReviews]', e); }
             },
