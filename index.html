@@ -3011,7 +3011,7 @@
 
                     const starPicker = [5,4,3,2,1].map(v => `<input type="radio" name="rv-rating-${productId}" id="rv-star-${productId}-${v}" value="${v}"><label for="rv-star-${productId}-${v}" title="${v} bintang"><i class="fa-solid fa-star"></i></label>`).join('');
 
-                    const formHTML = `<div class="rv-form-section"><h3>Tulis Ulasan</h3><div class="star-picker" id="star-picker-${productId}">${starPicker}</div><textarea id="rv-text-${productId}" class="rv-textarea" placeholder="Bagikan pengalaman kamu dengan produk ini... (opsional)" maxlength="1000"></textarea><div style="margin:12px 0;"><label style="font-size:13px;color:var(--secondary-text);display:block;margin-bottom:6px;"><i class="ph ph-camera"></i> Foto (opsional, maks. 3)</label><input type="file" id="rv-photos-${productId}" accept="image/*" multiple style="font-size:13px;width:100%;"></div><button class="rv-submit-btn" id="rv-submit-${productId}" onclick="app.submitReview(${productId})">Kirim Ulasan</button></div>`;
+                    const formHTML = `<div class="rv-form-section"><h3>Tulis Ulasan</h3><div class="star-picker" id="star-picker-${productId}">${starPicker}</div><textarea id="rv-text-${productId}" class="rv-textarea" placeholder="Bagikan pengalaman kamu dengan produk ini... (opsional)" maxlength="1000"></textarea><div style="margin:12px 0;"><label style="font-size:13px;color:var(--secondary-text);display:block;margin-bottom:6px;"><i class="ph ph-camera"></i> Foto (opsional, maks. 3)</label><input type="file" id="rv-photos-${productId}" accept="image/*" multiple style="font-size:13px;width:100%;"></div><div id="rv-error-box" style="display:none;background:#fdecea;border:1px solid rgba(214,64,69,0.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:0.88rem;color:#d64045;font-weight:500;"></div><button class="rv-submit-btn" id="rv-submit-${productId}" onclick="app.submitReview(${productId})">Kirim Ulasan</button></div>`;
 
                     if (resetList) {
                         body.innerHTML = summaryHTML + `<div id="rv-list-body">${reviewsHTML}</div>` + loadMoreBtn + formHTML;
@@ -4724,7 +4724,21 @@
                         body: JSON.stringify({ rating, review_text, photo_urls })
                     });
                     const data = await res.json();
-                    if (!res.ok) throw new Error(data.message || 'Terjadi kesalahan.');
+                    if (!res.ok) {
+                        // Show error inside modal so it's visible above the review form
+                        const errBox = document.getElementById('rv-error-box');
+                        const errMsg = data.message || 'Terjadi kesalahan.';
+                        if (errBox) {
+                            errBox.textContent = errMsg;
+                            errBox.style.display = 'block';
+                        } else {
+                            this.showToast(errMsg);
+                        }
+                        throw new Error(errMsg);
+                    }
+                    // Clear error box on success
+                    const errBox = document.getElementById('rv-error-box');
+                    if (errBox) errBox.style.display = 'none';
                     this.showToast('Ulasan berhasil dikirim! Terima kasih 🎉');
                     document.querySelectorAll(`input[name="rv-rating-${productId}"]:checked`).forEach(i => i.checked = false);
                     if (textEl) textEl.value = '';
@@ -4732,7 +4746,9 @@
                     this._reviewPage = 1;
                     this.renderReviewModal(productId, true);
                 } catch(e) {
-                    this.showToast(e.message);
+                    // Only show toast if errBox not already shown
+                    const errBox = document.getElementById('rv-error-box');
+                    if (!errBox || errBox.style.display === 'none') this.showToast(e.message);
                 } finally {
                     if (btn) { btn.disabled = false; btn.textContent = 'Kirim Ulasan'; }
                 }
