@@ -2712,7 +2712,7 @@
                         price: item.price,
                         stock: item.stock ?? 0,
                         images: (item.images && item.images.length > 0) ? item.images : (item.image_url ? [item.image_url] : [PLACEHOLDER]),
-                        category: item.category || "Uncategorized",
+                        category: item.category_name || item.category || "Uncategorized",
                         color: item.color || null,
                         sizes: Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes : [],
                         description: item.description || null,
@@ -2723,6 +2723,8 @@
                         total_sold: item.total_sold || 0,
                         is_new: item.is_new || false,
                         is_hot: item.is_hot || false,
+                        average_rating: parseFloat(item.average_rating) || 0,
+                        total_reviews: parseInt(item.total_reviews) || 0,
                     }));
                     this.renderShop();
                 } catch (err) {
