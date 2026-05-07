@@ -41,6 +41,23 @@ const ProductModel = {
     return map;
   },
 
+  // Helper: get product IDs that sold > 5 units in last 14 days (best sellers)
+  async _getHotProductIds(productIds) {
+    if (!productIds.length) return new Set();
+    const { rows } = await db.query(
+      `SELECT oi.product_id
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       WHERE oi.product_id = ANY($1::int[])
+         AND o.status IN ('paid', 'processing', 'shipped', 'completed')
+         AND o.created_at >= NOW() - INTERVAL '14 days'
+       GROUP BY oi.product_id
+       HAVING SUM(oi.quantity) > 5`,
+      [productIds]
+    );
+    return new Set(rows.map(r => r.product_id));
+  },
+
   async findAll({ category_id, search, page = 1, limit = 20 } = {}) {
     const offset = (page - 1) * limit;
     const conditions = [];
@@ -69,8 +86,10 @@ const ProductModel = {
     );
 
     const ids = rows.map(r => r.id);
-    const imagesMap = await this._getImages(ids);
-    const discountMap = await this._getActiveDiscounts(ids);
+    const imagesMap    = await this._getImages(ids);
+    const discountMap  = await this._getActiveDiscounts(ids);
+    const hotIds       = await this._getHotProductIds(ids);
+    const now          = new Date();
 
     return rows.map(row => {
       const discountPercent = discountMap[row.id] || null;
@@ -78,6 +97,11 @@ const ProductModel = {
       const finalPrice      = discountPercent
         ? Math.round(parseFloat(row.price) * (1 - discountPercent / 100))
         : parseFloat(row.price);
+      // is_new: uploaded within last 30 days
+      const createdAt = new Date(row.created_at);
+      const isNew = (now - createdAt) < 30 * 24 * 60 * 60 * 1000;
+      // is_hot: sold > 5 units in last 14 days
+      const isHot = hotIds.has(row.id);
       return {
         ...row,
         images:           imagesMap[row.id] || (row.image_url ? [row.image_url] : []),
@@ -89,6 +113,8 @@ const ProductModel = {
         discount_percent: discountPercent,
         original_price:   originalPrice,
         price:            finalPrice,
+        is_new:           isNew,
+        is_hot:           isHot,
       };
     });
   },
