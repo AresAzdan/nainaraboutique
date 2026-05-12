@@ -2056,10 +2056,27 @@
             if (!filtered.length) { tbody.innerHTML=`<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted);">No products found.</td></tr>`; return; }
             filtered.forEach(prod => {
                 const stockDisplay = (() => {
-                    if (prod.size_stocks && Object.keys(prod.size_stocks).length > 1) {
-                        const total = Object.values(prod.size_stocks).reduce((a,b)=>a+(b||0),0);
+                    const ss = prod.size_stocks;
+                    const isNested = ss && Object.keys(ss).length > 0 && typeof Object.values(ss)[0] === 'object';
+                    const isFlat   = ss && Object.keys(ss).length > 0 && typeof Object.values(ss)[0] === 'number';
+
+                    if (isNested) {
+                        // Nested: { Merah: { S: 10, M: 5 }, Biru: { S: 3 } }
+                        let total = 0;
+                        const rows = [];
+                        Object.entries(ss).forEach(([color, sizeObj]) => {
+                            let colorTotal = 0;
+                            Object.values(sizeObj).forEach(v => { colorTotal += (v||0); });
+                            total += colorTotal;
+                            rows.push(`<span style="display:inline-flex;align-items:center;gap:3px;background:${colorTotal===0?'#fee2e2':colorTotal<=3?'#fef3c7':'#f3f4f6'};border-radius:4px;padding:1px 6px;font-size:11px;margin:1px;white-space:nowrap;">${color}: <b>${colorTotal}</b></span>`);
+                        });
                         const isLow = total <= this.settings.lowStockThreshold;
-                        const rows = Object.entries(prod.size_stocks).map(([sz, qty]) =>
+                        return `<div style="font-weight:700;${isLow?'color:var(--danger)':''};">${total}${isLow?' (Low)':''}</div><div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:2px;">${rows.join('')}</div>`;
+                    } else if (isFlat) {
+                        // Flat: { S: 10, M: 5 }
+                        const total = Object.values(ss).reduce((a,b)=>a+(b||0),0);
+                        const isLow = total <= this.settings.lowStockThreshold;
+                        const rows = Object.entries(ss).map(([sz, qty]) =>
                             `<span style="display:inline-flex;align-items:center;gap:3px;background:${qty===0?'#fee2e2':qty<=3?'#fef3c7':'#f3f4f6'};border-radius:4px;padding:1px 6px;font-size:11px;margin:1px;white-space:nowrap;">${sz}: <b>${qty}</b></span>`
                         ).join('');
                         return `<div style="font-weight:700;${isLow?'color:var(--danger)':''};">${total}${isLow?' (Low)':''}</div><div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:2px;">${rows}</div>`;
