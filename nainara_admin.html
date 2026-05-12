@@ -2163,6 +2163,7 @@
             if (val && !this._colorList.includes(val)) {
                 this._colorList.push(val);
                 this.renderColorChips();
+                if (this._sizeMode === 'multi') this.renderSizeRows();
             }
             input.value = '';
             input.focus();
@@ -2172,12 +2173,14 @@
             if (!this._colorList.includes(color)) {
                 this._colorList.push(color);
                 this.renderColorChips();
+                if (this._sizeMode === 'multi') this.renderSizeRows();
             }
         },
 
         removeColorChip: function(index) {
             this._colorList.splice(index, 1);
             this.renderColorChips();
+            if (this._sizeMode === 'multi') this.renderSizeRows();
         },
 
         handleColorKey: function(e) {
@@ -2337,7 +2340,7 @@
                         <tbody>
                             ${sizes.map(size => {
                                 const rowTotal = colors.reduce((sum, c) => sum + ((this._sizeStocks[c]||{})[size]||0), 0);
-                                return `<tr id="sz-row-${CSS.escape(size)}">
+                                return `<tr data-szrow="${size}">
                                     <td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:700;color:#374151;">${size}</td>
                                     ${colors.map(color => `
                                         <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center;">
@@ -2345,7 +2348,7 @@
                                                 style="width:64px;text-align:center;padding:4px 4px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;font-weight:600;"
                                                 oninput="app.setColorSizeStock('${color}','${size}',parseInt(this.value)||0)">
                                         </td>`).join('')}
-                                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" id="sz-subtotal-${CSS.escape(size)}">${rowTotal}</td>
+                                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" data-szsubtotal="${size}">${rowTotal}</td>
                                     <td style="padding:4px;border:1px solid #e5e7eb;text-align:center;">
                                         <button type="button" onclick="app.removeSizeRow('${size}')"
                                             style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:16px;line-height:1;padding:0 4px;">&times;</button>
@@ -2358,7 +2361,7 @@
                                 <td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:600;color:#374151;">Color Total</td>
                                 ${colors.map(color => {
                                     const colTotal = sizes.reduce((sum, s) => sum + ((this._sizeStocks[color]||{})[s]||0), 0);
-                                    return `<td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" id="sz-coltotal-${CSS.escape(color)}">${colTotal}</td>`;
+                                    return `<td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" data-szcoltotal="${color}">${colTotal}</td>`;
                                 }).join('')}
                                 <td colspan="2" style="border:1px solid #e5e7eb;"></td>
                             </tr>
@@ -2374,7 +2377,7 @@
                     this.updateTotalStock(); return;
                 }
                 container.innerHTML = sizes.map(size => `
-                    <div style="display:flex;align-items:center;gap:10px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:10px 14px;" id="sz-row-${CSS.escape(size)}">
+                    <div style="display:flex;align-items:center;gap:10px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:10px 14px;" data-szrow="${size}">
                         <span style="font-size:13px;font-weight:700;color:#374151;min-width:60px;">${size}</span>
                         <div style="flex:1;display:flex;align-items:center;gap:8px;">
                             <button type="button" onclick="app.changeSizeStock('${size}',-1)"
@@ -2437,7 +2440,7 @@
         // Flat mode: increment/decrement
         changeSizeStock: function(size, delta) {
             this._sizeStocks[size] = Math.max(0, (this._sizeStocks[size] || 0) + delta);
-            const input = document.querySelector(`#sz-row-${CSS.escape(size)} input[type="number"]`);
+            const input = document.querySelector(`[data-szrow="${size}"] input[type="number"]`);
             if (input) input.value = this._sizeStocks[size];
             this.updateTotalStock();
         },
@@ -2449,11 +2452,11 @@
             // Update row subtotal
             const sizes = this._getSizeKeys();
             const rowTotal = this._colorList.reduce((sum, c) => sum + ((this._sizeStocks[c]||{})[size]||0), 0);
-            const subtotalEl = document.getElementById(`sz-subtotal-${CSS.escape(size)}`);
+            const subtotalEl = document.querySelector(`[data-szsubtotal="${size}"]`);
             if (subtotalEl) subtotalEl.textContent = rowTotal;
             // Update column total
             const colTotal = sizes.reduce((sum, s) => sum + ((this._sizeStocks[color]||{})[s]||0), 0);
-            const colTotalEl = document.getElementById(`sz-coltotal-${CSS.escape(color)}`);
+            const colTotalEl = document.querySelector(`[data-szcoltotal="${color}"]`);
             if (colTotalEl) colTotalEl.textContent = colTotal;
             this.updateTotalStock();
         },
