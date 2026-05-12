@@ -2188,8 +2188,23 @@
         },
 
         // ── SIZE + STOCK MANAGEMENT ───────────────────────────────────
-        _sizeMode: 'all',   // 'all' | 'multi'
-        _sizeStocks: {},    // { 'S': 10, 'M': 20, ... }
+        // _sizeMode: 'all' | 'multi'
+        // _sizeStocks format:
+        //   No colors → flat:    { 'S': 10, 'M': 20 }
+        //   With colors → nested: { 'Merah': { 'S': 10, 'M': 5 }, 'Biru': { 'S': 3 } }
+        _sizeMode: 'all',
+        _sizeStocks: {},
+
+        _hasColors: function() {
+            return this._colorList && this._colorList.length > 0;
+        },
+
+        // Detect whether _sizeStocks is nested (per-color) or flat
+        _isNestedStocks: function(ss) {
+            if (!ss || !Object.keys(ss).length) return false;
+            const firstVal = Object.values(ss)[0];
+            return typeof firstVal === 'object' && firstVal !== null;
+        },
 
         setSizeMode: function(mode) {
             this._sizeMode = mode;
@@ -2227,15 +2242,21 @@
 
         initSizeStocks: function(sizes, sizeStocks, stock) {
             this._sizeStocks = {};
-            // Detect mode
             if (!sizes || sizes.length === 0 || (sizes.length === 1 && sizes[0] === 'All Size')) {
                 this.setSizeMode('all');
                 document.getElementById('sz-all-stock').value = stock || 0;
             } else {
                 this.setSizeMode('multi');
-                this._sizeStocks = sizeStocks || {};
-                // Ensure every size has a value (fallback to evenly split stock)
-                if (!Object.keys(this._sizeStocks).length && sizes.length) {
+                if (sizeStocks && Object.keys(sizeStocks).length) {
+                    // Support both flat { S:10 } and nested { Merah: { S:10 } }
+                    if (this._isNestedStocks(sizeStocks)) {
+                        this._sizeStocks = sizeStocks;
+                    } else {
+                        // flat → store as-is (no colors mode)
+                        this._sizeStocks = sizeStocks;
+                    }
+                } else if (sizes.length) {
+                    // fallback: distribute evenly
                     const perSize = Math.floor((stock || 0) / sizes.length);
                     sizes.forEach(s => { this._sizeStocks[s] = perSize; });
                 }
@@ -2244,30 +2265,131 @@
             this.updateTotalStock();
         },
 
+        // Get sizes list regardless of flat/nested mode
+        _getSizeKeys: function() {
+            if (!this._hasColors()) return Object.keys(this._sizeStocks);
+            // nested: collect all sizes across all colors
+            const sizeSet = new Set();
+            Object.values(this._sizeStocks).forEach(colorObj => {
+                if (typeof colorObj === 'object') Object.keys(colorObj).forEach(s => sizeSet.add(s));
+            });
+            return Array.from(sizeSet);
+        },
+
+        // Ensure nested structure is in sync when colors change
+        _syncColorKeys: function() {
+            if (!this._hasColors()) return;
+            const colors = this._colorList;
+            const existingSizes = this._getSizeKeys();
+            // Get current nested if any
+            const wasNested = this._isNestedStocks(this._sizeStocks);
+            const flatStocks = wasNested ? null : { ...this._sizeStocks };
+
+            const newStocks = {};
+            colors.forEach(color => {
+                if (wasNested && this._sizeStocks[color]) {
+                    newStocks[color] = { ...this._sizeStocks[color] };
+                } else {
+                    // carry over sizes with 0 (or from flat if migrating)
+                    newStocks[color] = {};
+                    existingSizes.forEach(s => {
+                        newStocks[color][s] = (flatStocks && flatStocks[s]) ? Math.floor(flatStocks[s] / colors.length) : 0;
+                    });
+                }
+            });
+            this._sizeStocks = newStocks;
+        },
+
         renderSizeRows: function() {
             const container = document.getElementById('sz-rows');
             if (!container) return;
-            const sizes = Object.keys(this._sizeStocks);
-            if (!sizes.length) {
-                container.innerHTML = '<p style="font-size:13px;color:#9ca3af;text-align:center;padding:12px 0;">No sizes added yet. Use the quick-add buttons above.</p>';
-                return;
-            }
-            container.innerHTML = sizes.map(size => `
-                <div style="display:flex;align-items:center;gap:10px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:10px 14px;" id="sz-row-${CSS.escape(size)}">
-                    <span style="font-size:13px;font-weight:700;color:#374151;min-width:60px;">${size}</span>
-                    <div style="flex:1;display:flex;align-items:center;gap:8px;">
-                        <button type="button" onclick="app.changeSizeStock('${size}',-1)"
-                            style="width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;line-height:1;font-weight:600;">−</button>
-                        <input type="number" min="0" value="${this._sizeStocks[size]||0}"
-                            style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:14px;font-weight:600;"
-                            oninput="app.setSizeStock('${size}', parseInt(this.value)||0)">
-                        <button type="button" onclick="app.changeSizeStock('${size}',1)"
-                            style="width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;line-height:1;font-weight:600;">+</button>
+            const hasColors = this._hasColors();
+
+            if (hasColors) {
+                // Ensure nested structure
+                if (!this._isNestedStocks(this._sizeStocks)) {
+                    this._syncColorKeys();
+                }
+                const colors = this._colorList;
+                const sizes = this._getSizeKeys();
+
+                if (!sizes.length) {
+                    container.innerHTML = '<p style="font-size:13px;color:#9ca3af;text-align:center;padding:12px 0;">No sizes added yet. Use the quick-add buttons above.</p>';
+                    this.updateTotalStock(); return;
+                }
+
+                // Table: rows = sizes, columns = colors
+                let html = `
+                    <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr>
+                                <th style="text-align:left;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px 0 0 0;min-width:70px;">Size</th>
+                                ${colors.map(c => `<th style="text-align:center;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;white-space:nowrap;">
+                                    <span style="display:inline-flex;align-items:center;gap:5px;">
+                                        <span style="width:10px;height:10px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,0.2);display:inline-block;"></span>${c}
+                                    </span>
+                                </th>`).join('')}
+                                <th style="text-align:center;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;color:#9ca3af;">Sub-total</th>
+                                <th style="background:#f3f4f6;border:1px solid #e5e7eb;width:30px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sizes.map(size => {
+                                const rowTotal = colors.reduce((sum, c) => sum + ((this._sizeStocks[c]||{})[size]||0), 0);
+                                return `<tr id="sz-row-${CSS.escape(size)}">
+                                    <td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:700;color:#374151;">${size}</td>
+                                    ${colors.map(color => `
+                                        <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center;">
+                                            <input type="number" min="0" value="${(this._sizeStocks[color]||{})[size]||0}"
+                                                style="width:64px;text-align:center;padding:4px 4px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;font-weight:600;"
+                                                oninput="app.setColorSizeStock('${color}','${size}',parseInt(this.value)||0)">
+                                        </td>`).join('')}
+                                    <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" id="sz-subtotal-${CSS.escape(size)}">${rowTotal}</td>
+                                    <td style="padding:4px;border:1px solid #e5e7eb;text-align:center;">
+                                        <button type="button" onclick="app.removeSizeRow('${size}')"
+                                            style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:16px;line-height:1;padding:0 4px;">&times;</button>
+                                    </td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:600;color:#374151;">Color Total</td>
+                                ${colors.map(color => {
+                                    const colTotal = sizes.reduce((sum, s) => sum + ((this._sizeStocks[color]||{})[s]||0), 0);
+                                    return `<td style="padding:8px;border:1px solid #e5e7eb;text-align:center;font-weight:700;color:#463e31;" id="sz-coltotal-${CSS.escape(color)}">${colTotal}</td>`;
+                                }).join('')}
+                                <td colspan="2" style="border:1px solid #e5e7eb;"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    </div>`;
+                container.innerHTML = html;
+            } else {
+                // No colors — flat mode (original behavior)
+                const sizes = Object.keys(this._sizeStocks);
+                if (!sizes.length) {
+                    container.innerHTML = '<p style="font-size:13px;color:#9ca3af;text-align:center;padding:12px 0;">No sizes added yet. Use the quick-add buttons above.</p>';
+                    this.updateTotalStock(); return;
+                }
+                container.innerHTML = sizes.map(size => `
+                    <div style="display:flex;align-items:center;gap:10px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:10px 14px;" id="sz-row-${CSS.escape(size)}">
+                        <span style="font-size:13px;font-weight:700;color:#374151;min-width:60px;">${size}</span>
+                        <div style="flex:1;display:flex;align-items:center;gap:8px;">
+                            <button type="button" onclick="app.changeSizeStock('${size}',-1)"
+                                style="width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;line-height:1;font-weight:600;">−</button>
+                            <input type="number" min="0" value="${this._sizeStocks[size]||0}"
+                                style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:14px;font-weight:600;"
+                                oninput="app.setSizeStock('${size}', parseInt(this.value)||0)">
+                            <button type="button" onclick="app.changeSizeStock('${size}',1)"
+                                style="width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;line-height:1;font-weight:600;">+</button>
+                        </div>
+                        <button type="button" onclick="app.removeSizeRow('${size}')"
+                            style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:18px;line-height:1;padding:0;">&times;</button>
                     </div>
-                    <button type="button" onclick="app.removeSizeRow('${size}')"
-                        style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:18px;line-height:1;padding:0;">&times;</button>
-                </div>
-            `).join('');
+                `).join('');
+            }
             this.updateTotalStock();
         },
 
@@ -2275,23 +2397,44 @@
             size = (size || '').trim();
             if (!size) return;
             if (this._sizeMode !== 'multi') this.setSizeMode('multi');
-            if (this._sizeStocks.hasOwnProperty(size)) { this.showToast(`Size "${size}" already added.`); return; }
-            this._sizeStocks[size] = 0;
+
+            if (this._hasColors()) {
+                // Ensure nested
+                if (!this._isNestedStocks(this._sizeStocks)) this._syncColorKeys();
+                const exists = this._colorList.some(c => (this._sizeStocks[c]||{}).hasOwnProperty(size));
+                if (exists) { this.showToast(`Size "${size}" already added.`); return; }
+                this._colorList.forEach(color => {
+                    if (!this._sizeStocks[color]) this._sizeStocks[color] = {};
+                    this._sizeStocks[color][size] = 0;
+                });
+            } else {
+                if (this._sizeStocks.hasOwnProperty(size)) { this.showToast(`Size "${size}" already added.`); return; }
+                this._sizeStocks[size] = 0;
+            }
+
             this.renderSizeRows();
             const customInput = document.getElementById('sz-custom-input');
             if (customInput) customInput.value = '';
         },
 
         removeSizeRow: function(size) {
-            delete this._sizeStocks[size];
+            if (this._hasColors() && this._isNestedStocks(this._sizeStocks)) {
+                this._colorList.forEach(color => {
+                    if (this._sizeStocks[color]) delete this._sizeStocks[color][size];
+                });
+            } else {
+                delete this._sizeStocks[size];
+            }
             this.renderSizeRows();
         },
 
+        // Flat mode: set stock for a size
         setSizeStock: function(size, val) {
             this._sizeStocks[size] = Math.max(0, val);
             this.updateTotalStock();
         },
 
+        // Flat mode: increment/decrement
         changeSizeStock: function(size, delta) {
             this._sizeStocks[size] = Math.max(0, (this._sizeStocks[size] || 0) + delta);
             const input = document.querySelector(`#sz-row-${CSS.escape(size)} input[type="number"]`);
@@ -2299,12 +2442,33 @@
             this.updateTotalStock();
         },
 
+        // Nested (per-color) mode: set stock
+        setColorSizeStock: function(color, size, val) {
+            if (!this._sizeStocks[color]) this._sizeStocks[color] = {};
+            this._sizeStocks[color][size] = Math.max(0, val);
+            // Update row subtotal
+            const sizes = this._getSizeKeys();
+            const rowTotal = this._colorList.reduce((sum, c) => sum + ((this._sizeStocks[c]||{})[size]||0), 0);
+            const subtotalEl = document.getElementById(`sz-subtotal-${CSS.escape(size)}`);
+            if (subtotalEl) subtotalEl.textContent = rowTotal;
+            // Update column total
+            const colTotal = sizes.reduce((sum, s) => sum + ((this._sizeStocks[color]||{})[s]||0), 0);
+            const colTotalEl = document.getElementById(`sz-coltotal-${CSS.escape(color)}`);
+            if (colTotalEl) colTotalEl.textContent = colTotal;
+            this.updateTotalStock();
+        },
+
         updateTotalStock: function() {
             let total = 0;
             if (this._sizeMode === 'all') {
                 total = parseInt(document.getElementById('sz-all-stock')?.value) || 0;
+            } else if (this._hasColors() && this._isNestedStocks(this._sizeStocks)) {
+                // Sum all color × size combos
+                Object.values(this._sizeStocks).forEach(colorObj => {
+                    if (typeof colorObj === 'object') Object.values(colorObj).forEach(v => { total += (v||0); });
+                });
             } else {
-                total = Object.values(this._sizeStocks).reduce((a,b) => a + (b||0), 0);
+                total = Object.values(this._sizeStocks).reduce((a,b) => a + (typeof b === 'number' ? b : 0), 0);
             }
             const el = document.getElementById('sz-total-display');
             if (el) el.textContent = total;
@@ -2314,7 +2478,16 @@
             if (this._sizeMode === 'all') {
                 const stock = parseInt(document.getElementById('sz-all-stock')?.value) || 0;
                 return { sizes: ['All Size'], size_stocks: { 'All Size': stock }, stock };
+            } else if (this._hasColors() && this._isNestedStocks(this._sizeStocks)) {
+                // Nested: size_stocks = { Merah: { S: 10, M: 5 }, Biru: { S: 3 } }
+                const sizes = this._getSizeKeys();
+                let stock = 0;
+                Object.values(this._sizeStocks).forEach(colorObj => {
+                    if (typeof colorObj === 'object') Object.values(colorObj).forEach(v => { stock += (v||0); });
+                });
+                return { sizes, size_stocks: JSON.parse(JSON.stringify(this._sizeStocks)), stock };
             } else {
+                // Flat: size_stocks = { S: 10, M: 5 }
                 const sizes = Object.keys(this._sizeStocks);
                 const stock = Object.values(this._sizeStocks).reduce((a,b) => a + (b||0), 0);
                 return { sizes, size_stocks: { ...this._sizeStocks }, stock };
