@@ -1231,12 +1231,24 @@
 
     <!-- STOCK MODAL -->
     <div id="stock-modal" class="modal-overlay hidden">
-        <div class="modal-content stock-modal-content">
-            <h3 class="section-title" style="margin-bottom:16px;">Update Stock</h3>
+        <div class="modal-content stock-modal-content" style="max-width:480px;width:100%;">
+            <h3 class="section-title" style="margin-bottom:4px;">Update Stock</h3>
+            <div id="stock-modal-product-name" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;"></div>
             <form id="stock-form" onsubmit="app.handleStockSubmit(event)">
                 <input type="hidden" id="stock-p-id">
-                <div class="form-group"><label class="form-label">New Stock Quantity</label><input type="number" id="stock-input" class="form-input" min="0" required><small style="color:var(--text-muted);font-size:11px;margin-top:4px;">Enter the exact new quantity.</small></div>
-                <div class="modal-actions">
+                <!-- Simple mode: no variants -->
+                <div id="stock-simple-mode">
+                    <div class="form-group"><label class="form-label">New Stock Quantity</label><input type="number" id="stock-input" class="form-input" min="0"><small style="color:var(--text-muted);font-size:11px;margin-top:4px;">Enter the exact new quantity.</small></div>
+                </div>
+                <!-- Variant mode: per color or per color+size -->
+                <div id="stock-variant-mode" style="display:none;">
+                    <div id="stock-variant-body" style="display:flex;flex-direction:column;gap:0;max-height:420px;overflow-y:auto;"></div>
+                    <div style="margin-top:12px;padding:10px 14px;background:#f3f4f6;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:13px;font-weight:600;color:#374151;">Total Stock</span>
+                        <span id="stock-variant-total" style="font-size:16px;font-weight:700;color:#463e31;">0</span>
+                    </div>
+                </div>
+                <div class="modal-actions" style="margin-top:16px;">
                     <button type="button" class="btn-secondary" onclick="app.closeStockModal()">Cancel</button>
                     <button type="submit" class="btn-primary">Update</button>
                 </div>
@@ -2700,24 +2712,175 @@
         },
 
         openStockModal: function(id) {
-            const prod=this.data.products.find(p=>String(p.id)===String(id));
-            if (prod) { document.getElementById('stock-p-id').value=prod.id; document.getElementById('stock-input').value=prod.stock; document.getElementById('stock-modal').classList.remove('hidden'); }
+            const prod = this.data.products.find(p => String(p.id) === String(id));
+            if (!prod) return;
+            document.getElementById('stock-p-id').value = prod.id;
+            document.getElementById('stock-modal-product-name').textContent = prod.name;
+
+            const ss = prod.size_stocks || {};
+            const isNested = Object.keys(ss).length > 0 && typeof Object.values(ss)[0] === 'object';
+            const isFlat   = Object.keys(ss).length > 0 && typeof Object.values(ss)[0] === 'number';
+            const hasVariants = isNested || isFlat;
+
+            const simpleEl  = document.getElementById('stock-simple-mode');
+            const variantEl = document.getElementById('stock-variant-mode');
+            const body      = document.getElementById('stock-variant-body');
+
+            if (!hasVariants) {
+                simpleEl.style.display  = 'block';
+                variantEl.style.display = 'none';
+                document.getElementById('stock-input').value = prod.stock;
+            } else {
+                simpleEl.style.display  = 'none';
+                variantEl.style.display = 'block';
+                // Store working copy on app for submit
+                this._stockEditData = JSON.parse(JSON.stringify(ss));
+                this._stockEditNested = isNested;
+                this._renderStockVariantBody(prod);
+            }
+            document.getElementById('stock-modal').classList.remove('hidden');
+        },
+
+        _renderStockVariantBody: function(prod) {
+            const body = document.getElementById('stock-variant-body');
+            const ss   = this._stockEditData;
+            const isNested = this._stockEditNested;
+            let html = '';
+
+            if (isNested) {
+                // Per color+size table
+                const colors = Object.keys(ss);
+                const sizeSet = new Set();
+                colors.forEach(c => Object.keys(ss[c]||{}).forEach(s => sizeSet.add(s)));
+                const sizes = Array.from(sizeSet);
+
+                if (sizes.length === 0) {
+                    // Only colors, no sizes
+                    colors.forEach(color => {
+                        const qty = typeof ss[color] === 'number' ? ss[color] : 0;
+                        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};border:1px solid rgba(0,0,0,0.15);flex-shrink:0;"></span>
+                            <span style="flex:1;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize;">${color}</span>
+                            <input type="number" min="0" value="${qty}" data-color="${color}"
+                                style="width:80px;text-align:center;padding:5px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;font-weight:600;"
+                                oninput="app._onStockVariantInput(this)">
+                        </div>`;
+                    });
+                } else {
+                    // Color x Size grid
+                    html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead><tr>
+                            <th style="padding:7px 8px;background:#f3f4f6;border:1px solid #e5e7eb;text-align:left;">Size \ Color</th>
+                            ${colors.map(c => `<th style="padding:7px 8px;background:#f3f4f6;border:1px solid #e5e7eb;text-align:center;white-space:nowrap;">
+                                <span style="display:inline-flex;align-items:center;gap:4px;">
+                                    <span style="width:9px;height:9px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,0.15);display:inline-block;"></span>${c}
+                                </span></th>`).join('')}
+                        </tr></thead>
+                        <tbody>
+                            ${sizes.map(size => `<tr>
+                                <td style="padding:6px 8px;border:1px solid #e5e7eb;font-weight:700;color:#374151;">${size}</td>
+                                ${colors.map(color => `<td style="padding:4px 6px;border:1px solid #e5e7eb;text-align:center;">
+                                    <input type="number" min="0" value="${(ss[color]||{})[size]||0}"
+                                        data-color="${color}" data-size="${size}"
+                                        style="width:58px;text-align:center;padding:4px 3px;border:1.5px solid #e5e7eb;border-radius:5px;font-size:12px;font-weight:600;"
+                                        oninput="app._onStockVariantInput(this)">
+                                </td>`).join('')}
+                            </tr>`).join('')}
+                        </tbody>
+                    </table></div>`;
+                }
+            } else {
+                // Flat: per size only
+                Object.entries(ss).forEach(([sz, qty]) => {
+                    html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">
+                        <span style="flex:1;font-size:13px;font-weight:600;color:#374151;">${sz}</span>
+                        <input type="number" min="0" value="${qty||0}" data-size="${sz}"
+                            style="width:80px;text-align:center;padding:5px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;font-weight:600;"
+                            oninput="app._onStockVariantInput(this)">
+                    </div>`;
+                });
+            }
+
+            body.innerHTML = html;
+            this._updateStockVariantTotal();
+        },
+
+        _onStockVariantInput: function(input) {
+            const color = input.dataset.color;
+            const size  = input.dataset.size;
+            const val   = parseInt(input.value) || 0;
+            if (this._stockEditNested) {
+                if (color && size) {
+                    if (!this._stockEditData[color]) this._stockEditData[color] = {};
+                    this._stockEditData[color][size] = val;
+                } else if (color) {
+                    this._stockEditData[color] = val;
+                }
+            } else if (size) {
+                this._stockEditData[size] = val;
+            }
+            this._updateStockVariantTotal();
+        },
+
+        _updateStockVariantTotal: function() {
+            const ss = this._stockEditData;
+            const isNested = this._stockEditNested;
+            let total = 0;
+            if (isNested) {
+                Object.values(ss).forEach(v => {
+                    if (typeof v === 'object') Object.values(v).forEach(n => { total += (n||0); });
+                    else total += (v||0);
+                });
+            } else {
+                Object.values(ss).forEach(v => { total += (v||0); });
+            }
+            const el = document.getElementById('stock-variant-total');
+            if (el) el.textContent = total;
         },
 
         closeStockModal: function() { document.getElementById('stock-modal').classList.add('hidden'); },
 
         handleStockSubmit: async function(e) {
             e.preventDefault();
-            const id=document.getElementById('stock-p-id').value, newStock=parseInt(document.getElementById('stock-input').value);
-            if (newStock<0) return;
-            const prod=this.data.products.find(p=>String(p.id)===String(id)); if (!prod) return;
+            const id   = document.getElementById('stock-p-id').value;
+            const prod = this.data.products.find(p => String(p.id) === String(id));
+            if (!prod) return;
+
+            const simpleVisible = document.getElementById('stock-simple-mode').style.display !== 'none';
+            let newStock, newSizeStocks;
+
+            if (simpleVisible) {
+                newStock     = parseInt(document.getElementById('stock-input').value) || 0;
+                newSizeStocks = prod.size_stocks;
+            } else {
+                // Recalculate total from _stockEditData
+                newSizeStocks = JSON.parse(JSON.stringify(this._stockEditData));
+                newStock = 0;
+                if (this._stockEditNested) {
+                    Object.values(newSizeStocks).forEach(v => {
+                        if (typeof v === 'object') Object.values(v).forEach(n => { newStock += (n||0); });
+                        else newStock += (v||0);
+                    });
+                } else {
+                    Object.values(newSizeStocks).forEach(v => { newStock += (v||0); });
+                }
+            }
+
             try {
-                await apiFetch(`/api/admin/products/${id}`,{method:'PUT',body:JSON.stringify({...prod,stock:newStock})});
-                prod.stock=newStock;
-                if (prod.stock<=this.settings.lowStockThreshold) this.addNotification('stock',`${prod.name} stock is low (${prod.stock} left)`);
-                this.addActivityLog('Stock Update',`Manual update for ${prod.name}: ${newStock}`,'stock');
-                this.showToast('✅ Stock updated'); this.closeStockModal(); this.renderStock();
-            } catch(err) { this.showToast('⚠️ '+err.message); }
+                await apiFetch(`/api/admin/products/${id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ ...prod, stock: newStock, size_stocks: newSizeStocks })
+                });
+                prod.stock       = newStock;
+                prod.size_stocks = newSizeStocks;
+                if (prod.stock <= this.settings.lowStockThreshold)
+                    this.addNotification('stock', `${prod.name} stock is low (${prod.stock} left)`);
+                this.addActivityLog('Stock Update', `Manual update for ${prod.name}: ${newStock}`, 'stock');
+                this.showToast('✅ Stock updated');
+                this.closeStockModal();
+                this.renderStock();
+                this.renderProducts();
+            } catch(err) { this.showToast('⚠️ ' + err.message); }
         },
 
         getWIBDate: function() { const now=new Date(); return new Date(now.getTime()+(now.getTimezoneOffset()+420)*60000); },
