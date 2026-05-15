@@ -115,11 +115,35 @@ const OrderModel = {
   },
 
 async deleteById(id) {
-    const { rows } = await db.query(
-      `DELETE FROM orders WHERE id = $1 RETURNING *`,
-      [id]
-    );
-    return rows[0] || null;
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows } = await client.query(
+        `SELECT * FROM orders WHERE id = $1 FOR UPDATE`,
+        [id]
+      );
+      const order = rows[0] || null;
+      if (!order) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+
+      // Delete dependent records explicitly so admin deletion works even when
+      // production constraints were created without ON DELETE CASCADE.
+      await client.query('DELETE FROM return_requests WHERE order_id = $1', [id]);
+      await client.query('DELETE FROM order_items WHERE order_id = $1', [id]);
+      await client.query('DELETE FROM orders WHERE id = $1', [id]);
+
+      await client.query('COMMIT');
+      return order;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   },
 };
+
 module.exports = OrderModel;
