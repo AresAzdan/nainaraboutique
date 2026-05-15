@@ -2594,18 +2594,7 @@
                 try {
                     const formData = new FormData();
                     for (const file of pendingFiles) formData.append('images', file);
-                    // Kirim tanpa override headers agar auth token tetap terbawa
-                    const token = sessionStorage.getItem('nainara_token');
-                    const uploadRes = await fetch('/api/admin/upload', {
-                        method: 'POST',
-                        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
-                        body: formData
-                    });
-                    if (!uploadRes.ok) {
-                        const errText = await uploadRes.text();
-                        throw new Error(errText || 'Upload failed');
-                    }
-                    const uploadData = await uploadRes.json();
+                    const uploadData = await apiFetch('/api/admin/upload', { method: 'POST', body: formData });
                     if (uploadData && uploadData.urls) imageUrls = [...imageUrls, ...uploadData.urls];
                 } catch(err) {
                     this.showToast('⚠️ Image upload failed: ' + err.message);
