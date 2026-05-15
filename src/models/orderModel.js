@@ -113,6 +113,13 @@ const OrderModel = {
     );
     return rows[0] || null;
   },
-};
 
+async deleteById(id) {
+    const { rows } = await db.query(
+      `DELETE FROM orders WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+};
 module.exports = OrderModel;
