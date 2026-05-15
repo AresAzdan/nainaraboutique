@@ -2840,16 +2840,17 @@
                     `;
                 }
 
-                let displayImages = [...p.images];
-                if(displayImages.length < 4) {
-                    while(displayImages.length < 5) { displayImages.push(p.images[0]); }
-                }
+                const displayImages = Array.isArray(p.images)
+                    ? p.images.filter(Boolean)
+                    : [];
+                const mainImage = displayImages[0] || 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
+
                 
                 document.getElementById('product-detail-wrapper').innerHTML = `
                     <div class="pd-verlane-grid fade-in">
                         <div class="pd-gallery-wrapper">
                             <div class="pd-main-stage">
-                                <img src="${p.images[0]}" id="main-detail-img" alt="${p.name || 'Product image'}">
+                              <img src="${mainImage}" id="main-detail-img" alt="${p.name || 'Product image'}">
                             </div>
                             <div class="pd-thumbs-track">
                                 ${displayImages.map((img, i) => `
@@ -5580,7 +5581,9 @@
                         sizes: ['S', 'M', 'L'],
                         total_sold: 0,
                         rating: 0,
-                        images: [item.image_url ? item.image_url : PLACEHOLDER]
+                          images: Array.isArray(item.images) && item.images.length > 0
+                            ? item.images.filter(Boolean)
+                            : [item.image_url ? item.image_url : PLACEHOLDER]
                     }));
                 }
             } catch (err) {
