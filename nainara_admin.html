@@ -1386,6 +1386,54 @@
         return res.json();
     }
 
+    function normalizeImageUrl(url) {
+        if (!url || typeof url !== 'string') return null;
+        const clean = url.trim();
+        if (!clean) return null;
+        if (/^(https?:|data:|blob:)/i.test(clean)) return clean;
+        if (clean.startsWith('//')) return `${location.protocol === 'file:' ? 'https:' : location.protocol}${clean}`;
+        if (clean.startsWith('/')) return `${API_BASE}${clean}`;
+        return clean;
+    }
+
+    function normalizeImageList(value) {
+        let list = value;
+        if (typeof list === 'string') {
+            const clean = list.trim();
+            if (!clean) return [];
+            try {
+                list = JSON.parse(clean);
+            } catch (_) {
+                list = clean.includes(',') ? clean.split(',').map(item => item.trim()) : [clean];
+            }
+        }
+        if (!Array.isArray(list)) list = list ? [list] : [];
+        return list
+            .map(item => typeof item === 'string' ? item : (item?.url || item?.path || item?.location || item?.image_url || item?.src))
+            .map(normalizeImageUrl)
+            .filter(Boolean);
+    }
+
+    function getUploadUrls(uploadData) {
+        const candidate = uploadData?.urls || uploadData?.images || uploadData?.files || uploadData?.data?.urls || uploadData?.data?.images || uploadData?.data?.files || uploadData?.url || uploadData?.path || uploadData?.location;
+        return normalizeImageList(candidate);
+    }
+
+    function normalizeProduct(product, overrides = {}) {
+        const merged = { ...product, ...overrides };
+        const images = normalizeImageList(merged.images);
+        const fallbackImages = normalizeImageList(merged.image_url || merged.image);
+        const normalizedImages = images.length ? images : fallbackImages;
+        return {
+            ...merged,
+            categoryId: merged.category_id ?? merged.categoryId,
+            image: normalizedImages[0] || null,
+            images: normalizedImages,
+            sizes: merged.sizes || (merged.size ? String(merged.size).split(',').map(s => s.trim()).filter(Boolean) : ['All Size']),
+            size_stocks: merged.size_stocks || {}
+        };
+    }
+
     const app = {
         productToDeleteId: null,
         deletedProduct: null,
@@ -1458,7 +1506,7 @@
                     apiFetch('/api/homepage').catch(() => ({}))
                 ]);
                 const rawProducts = Array.isArray(products) ? products : (products?.data || []);
-                this.data.products = rawProducts.map(p => ({ ...p, categoryId: p.category_id ?? p.categoryId, image: p.images?.[0] || p.image_url || p.image || null, images: p.images || (p.image_url ? [p.image_url] : []), sizes: p.sizes || (p.size ? p.size.split(',').map(s=>s.trim()) : ['All Size']), size_stocks: p.size_stocks || {} }));
+                this.data.products = rawProducts.map(p => normalizeProduct(p));
                 this.data.orders     = (Array.isArray(orders) ? orders : (orders?.orders || orders?.data || [])).map(o => ({
                     ...o,
                     customerName: o.recipient_name || o.user_name || o.customerName || 'Unknown',
@@ -2122,7 +2170,7 @@
         renderImageGrid: function() {
             const grid = document.getElementById('p-image-grid'); if (!grid) return;
             // existing server URLs
-            const existing = app.currentImages || [];
+            const existing = normalizeImageList(app.currentImages || []);
             // local previews (base64, belum di-upload)
             const pending  = app._pendingPreviews || [];
             const total = existing.length + pending.length;
@@ -2587,18 +2635,19 @@
             const description=document.getElementById('p-description').value, color=app._colorList.join(',');
             const weight=parseInt(document.getElementById('p-weight').value)||500;
             // existing server URLs (tidak perlu di-upload ulang)
-            let imageUrls = [...(app.currentImages || [])];
+            let imageUrls = normalizeImageList(app.currentImages || []);
             // pending files = gambar baru yang dipilih user, belum di-upload
             const pendingFiles = app._pendingFiles || [];
             if (pendingFiles.length > 0) {
                 try {
                     const formData = new FormData();
                     for (const file of pendingFiles) formData.append('images', file);
-                    const uploadData = await apiFetch('/api/admin/upload', { method: 'POST', body: formData });
-                    if (uploadData && uploadData.urls) imageUrls = [...imageUrls, ...uploadData.urls];
+                    const uploadedUrls = getUploadUrls(await apiFetch('/api/admin/upload', { method: 'POST', body: formData }));
+                    if (!uploadedUrls.length) throw new Error('Upload succeeded but no image URLs were returned');
+                    imageUrls = [...imageUrls, ...uploadedUrls];
                 } catch(err) {
                     this.showToast('⚠️ Image upload failed: ' + err.message);
-                    // Jangan batalkan save — lanjut dengan gambar existing saja
+                    return;
                 }
             }
             const payload={name,category_id:categoryId,price,stock,sizes,size_stocks,description,color,weight,image_url:imageUrls[0]||null,images:imageUrls};
@@ -2608,12 +2657,12 @@
                 if (id) {
                     await apiFetch(`/api/admin/products/${id}`,{method:'PUT',body:JSON.stringify(payload)});
                     const index=this.data.products.findIndex(p=>String(p.id)===String(id));
-                    if (index!==-1) this.data.products[index]={...this.data.products[index],...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:this.data.products[index].id,sales:this.data.products[index].sales};
+                    if (index!==-1) this.data.products[index]=normalizeProduct(this.data.products[index], {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:this.data.products[index].id,sales:this.data.products[index].sales});
                     this.addActivityLog('Product Edited',`Updated: ${name}`,'products');
                     this.showToast('✅ Product updated');
                 } else {
                     const created=await apiFetch('/api/admin/products',{method:'POST',body:JSON.stringify(payload)});
-                    const newProduct=created?.product?{...created.product,categoryId:created.product.category_id,image:imageUrls[0]||null,images:imageUrls,sizes,size_stocks}:{...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:Date.now(),sales:0};
+                    const newProduct=normalizeProduct(created?.product || {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:Date.now(),sales:0}, {images:imageUrls,image:imageUrls[0]||null,sizes,size_stocks});
                     this.data.products.push(newProduct);
                     this.addActivityLog('Product Added',`Added: ${name}`,'products');
                     this.showToast('✅ Product added');
