@@ -3701,11 +3701,14 @@ renderProductSelector: function() {
             errEl.textContent = '';
             const ids = this._deleteOrderIds;
             let successCount = 0;
+            const failedIds = [];
             for (const id of ids) {
                 try {
                     await apiFetch('/api/admin/orders/' + id, { method: 'DELETE' });
                     successCount++;
+                    this.data.orders = this.data.orders.filter(o => String(o.id) !== String(id));
                 } catch(e) {
+                    failedIds.push(id);
                     console.warn('Failed to delete order', id, e);
                 }
                 // Remove from local data regardless (frontend cleanup)
@@ -3714,8 +3717,13 @@ renderProductSelector: function() {
             this.cancelDeleteOrderModal();
             this.renderOrders();
             this.renderDashboard();
-            this.addActivityLog('Orders Deleted', `${successCount} order(s) deleted`, 'orders');
-            this.showToast(`🗑️ ${successCount} order(s) deleted successfully`);
+            if (successCount > 0) this.addActivityLog('Orders Deleted', `${successCount} order(s) deleted`, 'orders');
+            if (failedIds.length > 0) {
+                this.showToast(`⚠️ Deleted ${successCount}; failed ${failedIds.length}. Please refresh and try again.`);
+            } else {
+                this.showToast(`🗑️ ${successCount} order(s) deleted successfully`);
+            }
+
         },
         // ── END DELETE ORDER FEATURE ───────────────────────────────────
 
