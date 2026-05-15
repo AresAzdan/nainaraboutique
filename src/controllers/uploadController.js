@@ -54,9 +54,9 @@ const uploadImages = [
       return res.status(400).json({ message: 'No files uploaded.' });
     }
 
-    const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-    const urls = req.files.map(f => `${BASE_URL}/uploads/products/${f.filename}`);
-
+    const baseUrl = getPublicBaseUrl(req);
+    const urls = req.files.map(f => `${baseUrl}/uploads/products/${f.filename}`);
+    
     res.json({ urls });
   },
 ];
