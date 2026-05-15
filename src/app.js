@@ -93,6 +93,9 @@ app.use('/api/products',   productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cart',       cartRoutes);
 app.use('/api/orders',     orderRoutes);
+// Keep the admin order delete endpoint registered directly as well as through
+// adminRoutes so live deployments do not fall through to the generic 404.
+app.delete('/api/admin/orders/:id', authenticate, authorizeAdmin, adminDeleteOrder);
 app.use('/api/admin',      adminRoutes);
 app.use('/api/payments',   paymentRoutes);
 app.use('/api/shipping',   shippingRoutes);
