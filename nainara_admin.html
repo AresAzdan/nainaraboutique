@@ -1390,9 +1390,29 @@
         if (!url || typeof url !== 'string') return null;
         const clean = url.trim();
         if (!clean) return null;
-        if (/^(https?:|data:|blob:)/i.test(clean)) return clean;
-        if (clean.startsWith('//')) return `${location.protocol === 'file:' ? 'https:' : location.protocol}${clean}`;
-        if (clean.startsWith('/')) return `${API_BASE}${clean}`;
+         if (/^(data:|blob:)/i.test(clean)) return clean;
+
+        const apiOrigin = new URL(API_BASE).origin;
+        const pageProtocol = location.protocol === 'file:' ? 'https:' : location.protocol;
+        const absoluteUrl = clean.startsWith('//') ? `${pageProtocol}${clean}` : clean;
+
+        if (/^https?:/i.test(absoluteUrl)) {
+            try {
+                const parsed = new URL(absoluteUrl);
+                const apiHost = new URL(apiOrigin).hostname;
+                const isLocalHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(parsed.hostname);
+                const isApiUpload = parsed.pathname.startsWith('/uploads/')
+                    && (parsed.hostname === apiHost || isLocalHost);
+                // Upload URLs must always use the public API origin. In production,
+                // proxies can hand back http:// or localhost URLs even though the
+                // browser needs https://nainaraboutique.com/uploads/... .
+                return isApiUpload ? `${apiOrigin}${parsed.pathname}${parsed.search}${parsed.hash}` : absoluteUrl;
+            } catch (_) {
+                return absoluteUrl;
+            }
+        }
+
+        if (clean.startsWith('/')) return `${apiOrigin}${clean}`;
         return clean;
     }
 
