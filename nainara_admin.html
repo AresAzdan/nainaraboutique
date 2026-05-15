@@ -2172,6 +2172,49 @@
             });
         },
 
+        prepareProductImageForUpload: function(file) {
+            const maxBytesBeforeResize = 3.5 * 1024 * 1024;
+            const maxDimension = 1800;
+            const quality = 0.85;
+            const filename = file?.name || 'product-image';
+            const fileType = (file?.type || '').toLowerCase();
+            const isHeic = /\.hei[cf]$/i.test(filename) || fileType.includes('heic') || fileType.includes('heif');
+            const isSupportedImage = fileType.startsWith('image/') || isHeic;
+
+            if (!file || !isSupportedImage || fileType === 'image/gif') return Promise.resolve(file);
+            if (file.size <= maxBytesBeforeResize && !isHeic) return Promise.resolve(file);
+
+            return new Promise(resolve => {
+                const image = new Image();
+                const objectUrl = URL.createObjectURL(file);
+                const finish = (uploadFile) => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(uploadFile || file);
+                };
+
+                image.onload = () => {
+                    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+                    const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+                    const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return finish(file);
+                    ctx.drawImage(image, 0, 0, width, height);
+                    canvas.toBlob(blob => {
+                        if (!blob) return finish(file);
+                        const safeName = filename.replace(/\.[^.]+$/, '') + '.jpg';
+                        const resized = new File([blob], safeName, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() });
+                        finish(resized.size < file.size || isHeic ? resized : file);
+                    }, 'image/jpeg', quality);
+                };
+
+                image.onerror = () => finish(file);
+                image.src = objectUrl;
+            });
+        },
+
         handleMultiImagePreview: function(input) {
             if (!input.files || !input.files.length) return;
             Array.from(input.files).forEach(file => {
@@ -2661,7 +2704,9 @@
             if (pendingFiles.length > 0) {
                 try {
                     const formData = new FormData();
-                    for (const file of pendingFiles) formData.append('images', file);
+                     for (const file of pendingFiles) {
+                        formData.append('images', await app.prepareProductImageForUpload(file));
+                    }
                     const uploadedUrls = getUploadUrls(await apiFetch('/api/admin/upload', { method: 'POST', body: formData }));
                     if (!uploadedUrls.length) throw new Error('Upload succeeded but no image URLs were returned');
                     imageUrls = [...imageUrls, ...uploadedUrls];
