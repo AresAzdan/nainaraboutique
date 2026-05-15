@@ -31,6 +31,19 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per file
 });
 
+function getPublicBaseUrl(req) {
+  if (process.env.BASE_URL) return process.env.BASE_URL.replace(/\/$/, '');
+
+  const forwardedProto = req.get('x-forwarded-proto');
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const isLocalHost = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/i.test(host || '');
+  const proto = forwardedProto
+    ? forwardedProto.split(',')[0].trim()
+    : (isLocalHost ? req.protocol : 'https');
+
+  return `${proto}://${host}`.replace(/\/$/, '');
+}
+
 // POST /api/admin/upload
 // Accepts: multipart/form-data with field name "images" (multiple files)
 // Returns: { urls: ['http://...', ...] }
