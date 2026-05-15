@@ -508,6 +508,17 @@ exports.adminUpdateOrderStatus = async (req, res) => {
   }
 };
 
+exports.adminDeleteOrder = async (req, res) => {
+  try {
+    const deleted = await OrderModel.deleteById(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Order not found' });
+    return res.json({ message: 'Order deleted.', order: deleted });
+  } catch (err) {
+    console.error('[adminDeleteOrder]', err);
+    return res.status(500).json({ message: 'Failed to delete order' });
+  }
+};
+
 // POST /orders/midtrans/notification  — Midtrans webhook (public)
 exports.midtransNotification = async (req, res) => {
   try {
