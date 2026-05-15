@@ -33,7 +33,9 @@ const app = express();
 //      so the browser sees a 503 — not a confusing "CORS error".
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
-  'https://nainaraboutique.vercel.app',
+  'https://nainaraboutique.com',
+  'https://www.nainaraboutique.com',
+  'https://admin.nainaraboutique.com',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
