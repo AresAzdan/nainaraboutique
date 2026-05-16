@@ -1,6 +1,56 @@
 const db = require('../config/db');
+const SizeGuideModel = require('./sizeGuideModel');
 
 const ProductModel = {
+
+  _buildSizeGuide(row) {
+    if (row.size_guide_id && row.size_guide_name) {
+      return {
+        id: row.size_guide_id,
+        name: row.size_guide_name,
+        columns: Array.isArray(row.saved_size_guide_columns) ? row.saved_size_guide_columns : [],
+        rows: Array.isArray(row.saved_size_guide_rows) ? row.saved_size_guide_rows : [],
+      };
+    }
+    if (row.size_guide_data && typeof row.size_guide_data === 'object') {
+      return {
+        id: null,
+        name: row.size_guide_data.name || 'Size Guide',
+        columns: Array.isArray(row.size_guide_data.columns) ? row.size_guide_data.columns : [],
+        rows: Array.isArray(row.size_guide_data.rows) ? row.size_guide_data.rows : [],
+      };
+    }
+    return null;
+  },
+
+  async _resolveSizeGuideInput({ size_guide_id, size_guide_data, save_size_guide, size_guide_name } = {}) {
+    if (size_guide_id) {
+      return { sizeGuideId: Number(size_guide_id), sizeGuideData: null };
+    }
+
+    const hasCustomGuide = size_guide_data
+      && Array.isArray(size_guide_data.columns)
+      && size_guide_data.columns.length > 0
+      && Array.isArray(size_guide_data.rows)
+      && size_guide_data.rows.length > 0;
+
+    if (!hasCustomGuide) {
+      return { sizeGuideId: null, sizeGuideData: null };
+    }
+
+    const guidePayload = {
+      name: String(size_guide_name || size_guide_data.name || 'Custom Size Guide').trim(),
+      columns: size_guide_data.columns,
+      rows: size_guide_data.rows,
+    };
+
+    if (save_size_guide) {
+      const guide = await SizeGuideModel.create(guidePayload);
+      return { sizeGuideId: guide.id, sizeGuideData: null };
+    }
+
+    return { sizeGuideId: null, sizeGuideData: guidePayload };
+  },
   // ── Helper: fetch images for one or many product IDs ──────────────────────
   async _getImages(productIds) {
     if (!productIds.length) return {};
@@ -81,9 +131,13 @@ const ProductModel = {
     }
 
     const { rows } = await db.query(
-      `SELECT p.*, c.name AS category_name
+      `SELECT p.*, c.name AS category_name,
+              sg.name AS size_guide_name,
+              sg.columns AS saved_size_guide_columns,
+              sg.rows AS saved_size_guide_rows
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN size_guides sg ON sg.id = p.size_guide_id
        ${where}
        ORDER BY p.created_at DESC
        ${pagination}`,
@@ -120,15 +174,22 @@ const ProductModel = {
         price:            finalPrice,
         is_new:           isNew,
         is_hot:           isHot,
+        size_guide_id:    row.size_guide_id || null,
+        size_guide_data:  row.size_guide_data || null,
+        size_guide:       this._buildSizeGuide(row),
       };
     });
   },
 
   async findById(id) {
     const { rows } = await db.query(
-      `SELECT p.*, c.name AS category_name
+      `SELECT p.*, c.name AS category_name,
+              sg.name AS size_guide_name,
+              sg.columns AS saved_size_guide_columns,
+              sg.rows AS saved_size_guide_rows
        FROM products p
        LEFT JOIN categories c ON p.category_id = c.id
+       LEFT JOIN size_guides sg ON sg.id = p.size_guide_id
        WHERE p.id = $1`,
       [id]
     );
@@ -153,18 +214,22 @@ const ProductModel = {
       discount_percent: discountPercent,
       original_price:   originalPrice,
       price:            finalPrice,
+      size_guide_id:    rows[0].size_guide_id || null,
+      size_guide_data:  rows[0].size_guide_data || null,
+      size_guide:       this._buildSizeGuide(rows[0]),
     };
   },
 
-  async create({ name, description, price, stock, image_url, category_id, images = [], color = '', weight = 500, sizes = [], size_stocks = {} }) {
+  async create({ name, description, price, stock, image_url, category_id, images = [], color = '', weight = 500, sizes = [], size_stocks = {}, size_guide_id = null, size_guide_data = null, save_size_guide = false, size_guide_name = '' }) {
     const primaryImage = images[0] || image_url || null;
+    const { sizeGuideId, sizeGuideData } = await this._resolveSizeGuideInput({ size_guide_id, size_guide_data, save_size_guide, size_guide_name });
 
     const { rows } = await db.query(
-      `INSERT INTO products (name, description, price, stock, image_url, category_id, color, weight, sizes, size_stocks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO products (name, description, price, stock, image_url, category_id, color, weight, sizes, size_stocks, size_guide_id, size_guide_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [name, description, price, stock, primaryImage, category_id, color, weight,
-       JSON.stringify(sizes), JSON.stringify(size_stocks)]
+       JSON.stringify(sizes), JSON.stringify(size_stocks), sizeGuideId, sizeGuideData ? JSON.stringify(sizeGuideData) : null]
     );
     const product = rows[0];
 
@@ -176,6 +241,9 @@ const ProductModel = {
       images:      allImages,
       sizes:       product.sizes       || sizes,
       size_stocks: product.size_stocks || size_stocks,
+      size_guide_id: product.size_guide_id || null,
+      size_guide_data: product.size_guide_data || null,
+      size_guide: this._buildSizeGuide(product),
     };
   },
 
@@ -196,12 +264,18 @@ const ProductModel = {
       size_stocks: rest.size_stocks !== undefined ? JSON.stringify(rest.size_stocks) : undefined,
     };
 
-    const allowed = ['name', 'description', 'price', 'stock', 'image_url', 'category_id', 'color', 'weight', 'sizes', 'size_stocks'];
+    if (rest.size_guide_id !== undefined || rest.size_guide_data !== undefined || rest.save_size_guide !== undefined) {
+      const { sizeGuideId, sizeGuideData } = await this._resolveSizeGuideInput(rest);
+      normalized.size_guide_id = sizeGuideId;
+      normalized.size_guide_data = sizeGuideData ? JSON.stringify(sizeGuideData) : null;
+    }
+
+    const allowed = ['name', 'description', 'price', 'stock', 'image_url', 'category_id', 'color', 'weight', 'sizes', 'size_stocks', 'size_guide_id', 'size_guide_data'];
     const updates = [];
     const values  = [];
 
     for (const key of allowed) {
-      if (normalized[key] !== undefined && normalized[key] !== null) {
+      if (normalized[key] !== undefined && (normalized[key] !== null || key === 'size_guide_id' || key === 'size_guide_data')) {
         values.push(normalized[key]);
         updates.push(`${key} = $${values.length}`);
       }
@@ -238,6 +312,9 @@ const ProductModel = {
       size_stocks: product.size_stocks || {},
       color:       product.color       || '',
       weight:      product.weight      || 500,
+      size_guide_id: product.size_guide_id || null,
+      size_guide_data: product.size_guide_data || null,
+      size_guide: this._buildSizeGuide(product),
     };
   },
 

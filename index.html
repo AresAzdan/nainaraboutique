@@ -449,12 +449,12 @@
 
         .product-grid-editorial { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; min-height: 400px; }
         
-        .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; transform: translateZ(0); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; }
         @media (hover: hover) { .prod-card-e:hover { transform: translateY(-5px); } }
 
-        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; transform: translateZ(0); isolation: isolate; }
-        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; will-change: transform; transform: translateZ(0); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-        @media (hover: hover) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); } }
+        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; }
+        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
+        @media (hover: hover) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); will-change: transform; } }
 
         /* Discount badge — overlay top-right corner of image */
         .prod-discount-badge {
@@ -697,11 +697,21 @@
             
             /* MEMPERBAIKI PRODUCT GRID SCALING DI MOBILE */
             .prod-card-e { width: 100%; margin: 0; }
-            /* Disable hover transforms on mobile — menyebabkan glitch saat scroll */
-            .prod-card-e:hover { transform: none; }
-            .prod-card-e:hover .prod-img-box img { transform: none; }
-            .highlight-card:hover { transform: none; }
-            .highlight-card:hover .highlight-img { transform: none; }
+            /* Disable compositor-heavy hover/image transforms on mobile — prevents scroll flicker. */
+            .prod-card-e,
+            .prod-card-e:hover,
+            .prod-img-box,
+            .prod-img-box img,
+            .prod-card-e:hover .prod-img-box img,
+            .highlight-card,
+            .highlight-card:hover,
+            .highlight-img,
+            .highlight-card:hover .highlight-img {
+                transform: none;
+                will-change: auto;
+            }
+            .prod-img-box img,
+            .highlight-img { transition: none; }
             .prod-title { font-size: 0.95rem; }
             .prod-price { font-size: 0.95rem; }
             .prod-price-old { font-size: 0.78rem; }
@@ -1965,30 +1975,12 @@
     </div>
 
     <div id="size-chart-modal" class="modal">
-        <div class="modal-box" style="max-width: 500px;">
+        <div class="modal-box" style="max-width: 560px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h3 style="margin:0; font-size:1.5rem; font-family:var(--font-heading);" data-i18n="sizeChart">Size Chart</h3>
+                <h3 id="size-chart-title" style="margin:0; font-size:1.5rem; font-family:var(--font-heading);" data-i18n="sizeChart">Size Chart</h3>
                 <i class="fa-solid fa-xmark" onclick="app.closeSizeChart()" style="cursor:pointer; font-size:1.2rem;"></i>
             </div>
-            <div class="size-table-wrapper">
-                <table class="size-table" style="width:100%; text-align:left; border-collapse:collapse;">
-                    <thead>
-                        <tr style="border-bottom: 2px solid #eee;">
-                            <th style="padding:10px;" data-i18n="size">Size</th>
-                            <th style="padding:10px;">Bust (cm)</th>
-                            <th style="padding:10px;">Waist (cm)</th>
-                            <th style="padding:10px;">Hips (cm)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr style="border-bottom: 1px solid #eee;"><td style="padding:10px;">XS</td><td style="padding:10px;">82</td><td style="padding:10px;">62</td><td style="padding:10px;">90</td></tr>
-                        <tr style="border-bottom: 1px solid #eee;"><td style="padding:10px;">S</td><td style="padding:10px;">86</td><td style="padding:10px;">66</td><td style="padding:10px;">94</td></tr>
-                        <tr style="border-bottom: 1px solid #eee;"><td style="padding:10px;">M</td><td style="padding:10px;">90</td><td style="padding:10px;">70</td><td style="padding:10px;">98</td></tr>
-                        <tr style="border-bottom: 1px solid #eee;"><td style="padding:10px;">L</td><td style="padding:10px;">96</td><td style="padding:10px;">76</td><td style="padding:10px;">104</td></tr>
-                        <tr><td style="padding:10px;">XL</td><td style="padding:10px;">102</td><td style="padding:10px;">82</td><td style="padding:10px;">110</td></tr>
-                    </tbody>
-                </table>
-            </div>
+            <div id="size-chart-content" class="size-table-wrapper"></div>
         </div>
     </div>
 
@@ -2116,8 +2108,12 @@
                 
                 this.updateItemsPerPage();
                 window.addEventListener('resize', () => {
-                    this.updateItemsPerPage();
-                    this.renderShop(); 
+                    // Mobile browsers fire resize while scrolling as the address bar
+                    // expands/collapses. Re-rendering the grid on those events
+                    // destroys/recreates product images and causes a visible flicker.
+                    if (this.updateItemsPerPage()) {
+                        this.renderShop();
+                    }
                 });
 
                 window.addEventListener('hashchange', () => this.handleRoute());
@@ -2133,7 +2129,10 @@
             },
 
             updateItemsPerPage() {
-                this.data.itemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                const nextItemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                if (this.data.itemsPerPage === nextItemsPerPage) return false;
+                this.data.itemsPerPage = nextItemsPerPage;
+                return true;
             },
 
             initLanguage() {
@@ -2407,7 +2406,8 @@
                     
                     if (filterType || category) {
                         this.resetFilters(false);
-                        if(filterType === 'sale') this.data.filters.type = 'sale';
+                        if(filterType === 'collection') this.data.filters.type = 'all';
+                        else if(filterType === 'sale') this.data.filters.type = 'sale';
                         else if(filterType === 'new') this.data.filters.type = 'new';
                         else if(filterType === 'hot') this.data.filters.type = 'hot'; 
                         else if(category) this.data.filters.categories = [category.charAt(0).toUpperCase() + category.slice(1)];
@@ -2737,6 +2737,9 @@
                         is_hot: item.is_hot || false,
                         average_rating: parseFloat(item.average_rating) || 0,
                         total_reviews: parseInt(item.total_reviews) || 0,
+                        size_guide_id: item.size_guide_id || null,
+                        size_guide_data: item.size_guide_data || null,
+                        size_guide: item.size_guide || null,
                     }));
                     this.renderShop();
                 } catch (err) {
@@ -2894,7 +2897,7 @@
                             <div class="pd-option-group">
                                 <div class="pd-option-label">
                                     <span>${this.t('size')}${safeSizes.length > 0 ? ': <span id="selected-size-label">' + this.data.selectedSize + '</span>' : ''}</span>
-                                    <span class="pd-size-guide-link" onclick="app.openSizeChart()">${this.t('sizeGuide')}</span>
+                                    <span class="pd-size-guide-link" onclick="app.openSizeChart(${p.id})">${this.t('sizeGuide')}</span>
                                 </div>
                                 ${safeSizes.length > 0 ? `
                                 <div class="size-btn-group" id="detail-size-container">
@@ -2918,7 +2921,6 @@
 
                             <div class="pd-description-text">
                                 <p>${p.description || "A masterclass in tailored minimalism. This piece features a relaxed point collar, storm flaps, and adjustable details. It is crafted from premium materials ensuring longevity and style."}</p>
-                                <p style="margin-top:10px; font-size:0.85rem; color:#666;">Model is 5'10", wearing a size S.<br>100% Recycled Material.</p>
                             </div>
 
                             <div class="complete-look">
@@ -3150,7 +3152,46 @@
                 if (label && colorName) label.textContent = colorName;
             },
 
-            openSizeChart() { this.dom.sizeChartModal.classList.add('active'); },
+            escapeHTML(value) {
+                return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[ch]));
+            },
+
+            getProductSizeGuide(product) {
+                const guide = product?.size_guide || product?.size_guide_data;
+                if (!guide || !Array.isArray(guide.columns) || !Array.isArray(guide.rows)) return null;
+                if (guide.columns.length === 0 || guide.rows.length === 0) return null;
+                return guide;
+            },
+
+            renderSizeGuideTable(guide) {
+                const columns = guide.columns || [];
+                const rows = guide.rows || [];
+                return `
+                    <table class="size-table" style="width:100%; text-align:left; border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid #eee;">
+                                ${columns.map(col => `<th style="padding:10px;">${this.escapeHTML(col)}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map(row => `<tr style="border-bottom: 1px solid #eee;">${columns.map((_, i) => `<td style="padding:10px;">${this.escapeHTML(row[i] || '')}</td>`).join('')}</tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            },
+
+            openSizeChart(productId) {
+                const product = this.data.products.find(x => String(x.id) === String(productId));
+                const guide = this.getProductSizeGuide(product);
+                const titleEl = document.getElementById('size-chart-title');
+                const contentEl = document.getElementById('size-chart-content');
+                if (titleEl) titleEl.textContent = guide?.name || this.t('sizeChart');
+                if (contentEl) {
+                    contentEl.innerHTML = guide
+                        ? this.renderSizeGuideTable(guide)
+                        : '<p style="color:var(--secondary-text);font-size:0.95rem;line-height:1.7;margin:0;">No size guide has been added for this product yet.</p>';
+                }
+                this.dom.sizeChartModal.classList.add('active');
+            },
             closeSizeChart() { this.dom.sizeChartModal.classList.remove('active'); },
 
             updateDetailQty(change, price) {
@@ -5572,16 +5613,23 @@
                         name: item.name || 'Unnamed Product',
                         description: item.description || '',
                         price: parseFloat(item.price) || 0,
-                        originalPrice: null,
-                        category: item.category_name || 'Uncategorized',
-                        color: '',
+                        originalPrice: item.original_price || item.originalPrice || null,
+                        category: item.category_name || item.category || 'Uncategorized',
+                        color: item.color || '',
                         stock: item.stock != null ? item.stock : 0,
-                        status: null,
-                        discount: null,
-                        sizes: ['S', 'M', 'L'],
-                        total_sold: 0,
-                        rating: 0,
-                          images: Array.isArray(item.images) && item.images.length > 0
+                        status: item.status || null,
+                        discount: item.discount || null,
+                        sizes: Array.isArray(item.sizes) ? item.sizes : [],
+                        total_sold: item.total_sold || 0,
+                        rating: item.rating || 0,
+                        is_new: item.is_new || false,
+                        is_hot: item.is_hot || false,
+                        average_rating: parseFloat(item.average_rating) || 0,
+                        total_reviews: parseInt(item.total_reviews, 10) || 0,
+                        size_guide_id: item.size_guide_id || null,
+                        size_guide_data: item.size_guide_data || null,
+                        size_guide: item.size_guide || null,
+                        images: Array.isArray(item.images) && item.images.length > 0
                             ? item.images.filter(Boolean)
                             : [item.image_url ? item.image_url : PLACEHOLDER]
                     }));
@@ -5607,6 +5655,12 @@
             if (this._homepageData) {
                 this.applyHomepageData(this._homepageData);
             }
+
+            // If a user clicks a CTA/nav item while the initial API requests are
+            // still running, the hash may change before the hashchange listener is
+            // registered. Handle the current route once init is complete so first
+            // load navigation always lands on the intended page.
+            this.handleRoute();
         };
 
         app.applyHomepageData = function(hp) {

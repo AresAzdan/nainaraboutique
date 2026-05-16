@@ -1183,6 +1183,27 @@
                     </div>
                     <small id="err-stock" class="error-text hidden">Stock cannot be negative.</small>
                 </div>
+                <div class="form-group" id="size-guide-section">
+                    <label class="form-label">Size Guide</label>
+                    <select id="p-size-guide-mode" class="form-input" onchange="app.handleSizeGuideModeChange()">
+                        <option value="none">No size guide</option>
+                        <option value="saved">Use saved size guide</option>
+                        <option value="custom">Create custom size guide</option>
+                    </select>
+                    <div id="p-size-guide-saved-panel" style="display:none;margin-top:10px;">
+                        <select id="p-size-guide-select" class="form-input" onchange="app.previewSelectedSizeGuide()"></select>
+                    </div>
+                    <div id="p-size-guide-custom-panel" style="display:none;margin-top:10px;display:none;flex-direction:column;gap:8px;">
+                        <input type="text" id="p-size-guide-name" class="form-input" placeholder="Guide name, e.g. Women's Tops Standard">
+                        <input type="text" id="p-size-guide-columns" class="form-input" placeholder="Columns separated by comma, e.g. Size, Bust (cm), Waist (cm), Hips (cm)">
+                        <textarea id="p-size-guide-rows" class="form-input" rows="4" placeholder="One row per line, cells separated by |&#10;S | 86 | 66 | 94&#10;M | 90 | 70 | 98"></textarea>
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#374151;">
+                            <input type="checkbox" id="p-size-guide-save-reuse"> Save this guide for reuse
+                        </label>
+                    </div>
+                    <div id="p-size-guide-preview" style="display:none;margin-top:10px;overflow-x:auto;"></div>
+                    <small style="color:var(--text-muted);font-size:11px;margin-top:6px;display:block;">Saved guides can be selected again for other products.</small>
+                </div>
                 <div class="form-group">
                     <label class="form-label">Product Images</label>
                     <div id="image-drop-zone" onclick="document.getElementById('p-image-input').click()" style="border:2px dashed var(--border-color);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:border-color 0.2s;background:#fafafa;">
@@ -1450,7 +1471,10 @@
             image: normalizedImages[0] || null,
             images: normalizedImages,
             sizes: merged.sizes || (merged.size ? String(merged.size).split(',').map(s => s.trim()).filter(Boolean) : ['All Size']),
-            size_stocks: merged.size_stocks || {}
+            size_stocks: merged.size_stocks || {},
+            size_guide_id: merged.size_guide_id || null,
+            size_guide_data: merged.size_guide_data || null,
+            size_guide: merged.size_guide || null
         };
     }
 
@@ -1474,7 +1498,7 @@
 
         data: {
             activityLogs: [], notifications: [], categories: [],
-            customers: [], discounts: [], orders: [], products: [], returns: [], homepage: {}
+            customers: [], discounts: [], orders: [], products: [], returns: [], homepage: {}, sizeGuides: []
         },
 
         init: function() {
@@ -1516,14 +1540,15 @@
         loadAllData: async function() {
             this.showLoading(true);
             try {
-                const [products, orders, categories, customers, discounts, returns, homepage] = await Promise.all([
+                const [products, orders, categories, customers, discounts, returns, homepage, sizeGuides] = await Promise.all([
                     apiFetch('/api/products'),
                     apiFetch('/api/admin/orders'),
                     apiFetch('/api/categories'),
                     apiFetch('/api/admin/customers'),
                     apiFetch('/api/admin/discounts'),
                     apiFetch('/api/admin/returns').catch(() => []),
-                    apiFetch('/api/homepage').catch(() => ({}))
+                    apiFetch('/api/homepage').catch(() => ({})),
+                    apiFetch('/api/admin/size-guides').catch(() => ({ data: [] }))
                 ]);
                 const rawProducts = Array.isArray(products) ? products : (products?.data || []);
                 this.data.products = rawProducts.map(p => normalizeProduct(p));
@@ -1546,6 +1571,7 @@
                 this.data.discounts  = Array.isArray(discounts)  ? discounts  : (discounts?.data  || []);
                 this.data.returns    = Array.isArray(returns)    ? returns    : (returns?.data   || []);
                 this.data.homepage   = homepage || {};
+                this.data.sizeGuides = Array.isArray(sizeGuides) ? sizeGuides : (sizeGuides?.data || []);
                 this.data.orders.forEach(o => { if (['Paid','Shipped','Completed'].includes(o.status)) o.stockDeducted = true; });
                 this.renderDashboard();
                 this.renderOrders();
@@ -2296,13 +2322,111 @@
                 app._pendingFiles=[]; app._pendingPreviews=[];
                 app.renderImageGrid();
                 app.initSizeStocks(prod.sizes||[], prod.size_stocks||{}, prod.stock||0);
+                app.initSizeGuideForm(prod);
             } else {
                 title.innerText='Add New Product'; btnSave.innerText='Save Product';
                 document.getElementById('product-form').reset(); document.getElementById('p-id').value='';
                 app.currentImages=[]; app._pendingFiles=[]; app._pendingPreviews=[]; app.renderImageGrid(); app.initColorInput('');
                 const fileInput=document.getElementById('p-image-input'); if (fileInput) fileInput.value='';
                 app.initSizeStocks([], {}, 0);
+                app.initSizeGuideForm(null);
             }
+        },
+
+        // ── SIZE GUIDE MANAGEMENT ──────────────────────────────────────
+        escapeHtml: function(value) {
+            return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[ch]));
+        },
+
+        populateSizeGuideDropdown: function(selectedId = '') {
+            const select = document.getElementById('p-size-guide-select');
+            if (!select) return;
+            const guides = this.data.sizeGuides || [];
+            select.innerHTML = guides.length
+                ? guides.map(g => `<option value="${g.id}" ${String(g.id)===String(selectedId)?'selected':''}>${this.escapeHtml(g.name)}</option>`).join('')
+                : '<option value="">No saved guides yet</option>';
+        },
+
+        initSizeGuideForm: function(prod) {
+            this.populateSizeGuideDropdown(prod?.size_guide_id || '');
+            const mode = document.getElementById('p-size-guide-mode');
+            const saveReuse = document.getElementById('p-size-guide-save-reuse');
+            if (!mode) return;
+            if (prod?.size_guide_id) {
+                mode.value = 'saved';
+            } else if (prod?.size_guide_data || prod?.size_guide) {
+                const guide = prod.size_guide_data || prod.size_guide;
+                mode.value = 'custom';
+                document.getElementById('p-size-guide-name').value = guide?.name || '';
+                document.getElementById('p-size-guide-columns').value = (guide?.columns || []).join(', ');
+                document.getElementById('p-size-guide-rows').value = (guide?.rows || []).map(row => row.join(' | ')).join('\n');
+            } else {
+                mode.value = 'none';
+                document.getElementById('p-size-guide-name').value = '';
+                document.getElementById('p-size-guide-columns').value = '';
+                document.getElementById('p-size-guide-rows').value = '';
+            }
+            if (saveReuse) saveReuse.checked = false;
+            this.handleSizeGuideModeChange();
+        },
+
+        handleSizeGuideModeChange: function() {
+            const mode = document.getElementById('p-size-guide-mode')?.value || 'none';
+            const savedPanel = document.getElementById('p-size-guide-saved-panel');
+            const customPanel = document.getElementById('p-size-guide-custom-panel');
+            if (savedPanel) savedPanel.style.display = mode === 'saved' ? 'block' : 'none';
+            if (customPanel) customPanel.style.display = mode === 'custom' ? 'flex' : 'none';
+            this.previewSelectedSizeGuide();
+        },
+
+        parseCustomSizeGuide: function() {
+            const name = document.getElementById('p-size-guide-name')?.value.trim() || 'Custom Size Guide';
+            const columns = (document.getElementById('p-size-guide-columns')?.value || '')
+                .split(',').map(c => c.trim()).filter(Boolean);
+            const rows = (document.getElementById('p-size-guide-rows')?.value || '')
+                .split('\n')
+                .map(line => line.split('|').map(cell => cell.trim()).filter(Boolean))
+                .filter(row => row.length > 0);
+            return { name, columns, rows };
+        },
+
+        previewSelectedSizeGuide: function() {
+            const preview = document.getElementById('p-size-guide-preview');
+            if (!preview) return;
+            const mode = document.getElementById('p-size-guide-mode')?.value || 'none';
+            let guide = null;
+            if (mode === 'saved') {
+                const id = document.getElementById('p-size-guide-select')?.value;
+                guide = (this.data.sizeGuides || []).find(g => String(g.id) === String(id));
+            } else if (mode === 'custom') {
+                guide = this.parseCustomSizeGuide();
+            }
+            if (!guide || !guide.columns?.length || !guide.rows?.length) {
+                preview.style.display = 'none';
+                preview.innerHTML = '';
+                return;
+            }
+            preview.style.display = 'block';
+            preview.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${guide.columns.map(c=>`<th style="border:1px solid #e5e7eb;padding:6px;background:#f9fafb;text-align:left;">${this.escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${guide.rows.map(row=>`<tr>${guide.columns.map((_,i)=>`<td style="border:1px solid #e5e7eb;padding:6px;">${this.escapeHtml(row[i] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+        },
+
+        collectSizeGuideData: function() {
+            const mode = document.getElementById('p-size-guide-mode')?.value || 'none';
+            if (mode === 'saved') {
+                const guideId = document.getElementById('p-size-guide-select')?.value;
+                return { size_guide_id: guideId ? parseInt(guideId, 10) : null, size_guide_data: null, save_size_guide: false };
+            }
+            if (mode === 'custom') {
+                const guide = this.parseCustomSizeGuide();
+                if (!guide.columns.length || !guide.rows.length) return { size_guide_id: null, size_guide_data: null, save_size_guide: false };
+                return {
+                    size_guide_id: null,
+                    size_guide_data: guide,
+                    save_size_guide: document.getElementById('p-size-guide-save-reuse')?.checked || false,
+                    size_guide_name: guide.name,
+                };
+            }
+            return { size_guide_id: null, size_guide_data: null, save_size_guide: false };
         },
 
         // ── COLOR CHIP MANAGEMENT ──────────────────────────────────────
@@ -2715,7 +2839,8 @@
                     return;
                 }
             }
-            const payload={name,category_id:categoryId,price,stock,sizes,size_stocks,description,color,weight,image_url:imageUrls[0]||null,images:imageUrls};
+            const sizeGuidePayload = this.collectSizeGuideData();
+            const payload={name,category_id:categoryId,price,stock,sizes,size_stocks,description,color,weight,image_url:imageUrls[0]||null,images:imageUrls,...sizeGuidePayload};
             try {
                 const btnSave=document.getElementById('btn-save');
                 btnSave.classList.add('btn-loading'); btnSave.textContent='Saving...';
@@ -2731,6 +2856,10 @@
                     this.data.products.push(newProduct);
                     this.addActivityLog('Product Added',`Added: ${name}`,'products');
                     this.showToast('✅ Product added');
+                }
+                if (sizeGuidePayload.save_size_guide) {
+                    const refreshedGuides = await apiFetch('/api/admin/size-guides').catch(() => ({ data: this.data.sizeGuides }));
+                    this.data.sizeGuides = Array.isArray(refreshedGuides) ? refreshedGuides : (refreshedGuides?.data || this.data.sizeGuides);
                 }
                 this.closeModal(); this.renderProducts();
             } catch(err) { this.showToast('⚠️ '+err.message); }

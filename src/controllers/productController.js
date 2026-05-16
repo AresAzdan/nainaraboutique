@@ -121,6 +121,7 @@ const createProduct = async (req, res, next) => {
       name, description, price, stock,
       image_url, category_id, images,
       color, weight, sizes, size_stocks,
+      size_guide_id, size_guide_data, save_size_guide, size_guide_name,
     } = req.body;
 
     if (price < 0) throw createError(400, 'Price must be non-negative.');
@@ -135,6 +136,10 @@ const createProduct = async (req, res, next) => {
       weight:      weight      || 500,
       sizes:       sizes       || [],
       size_stocks: size_stocks || {},
+      size_guide_id,
+      size_guide_data,
+      save_size_guide,
+      size_guide_name,
     });
 
     res.status(201).json({ message: 'Product created.', product });
