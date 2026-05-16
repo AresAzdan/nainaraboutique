@@ -449,12 +449,12 @@
 
         .product-grid-editorial { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; min-height: 400px; }
         
-        .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; transform: translateZ(0); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; }
         @media (hover: hover) { .prod-card-e:hover { transform: translateY(-5px); } }
 
-        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; transform: translateZ(0); isolation: isolate; }
-        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; will-change: transform; transform: translateZ(0); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-        @media (hover: hover) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); } }
+        .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; }
+        .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
+        @media (hover: hover) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); will-change: transform; } }
 
         /* Discount badge — overlay top-right corner of image */
         .prod-discount-badge {
@@ -697,11 +697,21 @@
             
             /* MEMPERBAIKI PRODUCT GRID SCALING DI MOBILE */
             .prod-card-e { width: 100%; margin: 0; }
-            /* Disable hover transforms on mobile — menyebabkan glitch saat scroll */
-            .prod-card-e:hover { transform: none; }
-            .prod-card-e:hover .prod-img-box img { transform: none; }
-            .highlight-card:hover { transform: none; }
-            .highlight-card:hover .highlight-img { transform: none; }
+            /* Disable compositor-heavy hover/image transforms on mobile — prevents scroll flicker. */
+            .prod-card-e,
+            .prod-card-e:hover,
+            .prod-img-box,
+            .prod-img-box img,
+            .prod-card-e:hover .prod-img-box img,
+            .highlight-card,
+            .highlight-card:hover,
+            .highlight-img,
+            .highlight-card:hover .highlight-img {
+                transform: none;
+                will-change: auto;
+            }
+            .prod-img-box img,
+            .highlight-img { transition: none; }
             .prod-title { font-size: 0.95rem; }
             .prod-price { font-size: 0.95rem; }
             .prod-price-old { font-size: 0.78rem; }
@@ -2116,8 +2126,12 @@
                 
                 this.updateItemsPerPage();
                 window.addEventListener('resize', () => {
-                    this.updateItemsPerPage();
-                    this.renderShop(); 
+                    // Mobile browsers fire resize while scrolling as the address bar
+                    // expands/collapses. Re-rendering the grid on those events
+                    // destroys/recreates product images and causes a visible flicker.
+                    if (this.updateItemsPerPage()) {
+                        this.renderShop();
+                    }
                 });
 
                 window.addEventListener('hashchange', () => this.handleRoute());
@@ -2133,7 +2147,10 @@
             },
 
             updateItemsPerPage() {
-                this.data.itemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                const nextItemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                if (this.data.itemsPerPage === nextItemsPerPage) return false;
+                this.data.itemsPerPage = nextItemsPerPage;
+                return true;
             },
 
             initLanguage() {
@@ -2407,7 +2424,8 @@
                     
                     if (filterType || category) {
                         this.resetFilters(false);
-                        if(filterType === 'sale') this.data.filters.type = 'sale';
+                        if(filterType === 'collection') this.data.filters.type = 'all';
+                        else if(filterType === 'sale') this.data.filters.type = 'sale';
                         else if(filterType === 'new') this.data.filters.type = 'new';
                         else if(filterType === 'hot') this.data.filters.type = 'hot'; 
                         else if(category) this.data.filters.categories = [category.charAt(0).toUpperCase() + category.slice(1)];
@@ -5572,16 +5590,20 @@
                         name: item.name || 'Unnamed Product',
                         description: item.description || '',
                         price: parseFloat(item.price) || 0,
-                        originalPrice: null,
-                        category: item.category_name || 'Uncategorized',
-                        color: '',
+                        originalPrice: item.original_price || item.originalPrice || null,
+                        category: item.category_name || item.category || 'Uncategorized',
+                        color: item.color || '',
                         stock: item.stock != null ? item.stock : 0,
-                        status: null,
-                        discount: null,
-                        sizes: ['S', 'M', 'L'],
-                        total_sold: 0,
-                        rating: 0,
-                          images: Array.isArray(item.images) && item.images.length > 0
+                        status: item.status || null,
+                        discount: item.discount || null,
+                        sizes: Array.isArray(item.sizes) ? item.sizes : [],
+                        total_sold: item.total_sold || 0,
+                        rating: item.rating || 0,
+                        is_new: item.is_new || false,
+                        is_hot: item.is_hot || false,
+                        average_rating: parseFloat(item.average_rating) || 0,
+                        total_reviews: parseInt(item.total_reviews, 10) || 0,
+                        images: Array.isArray(item.images) && item.images.length > 0
                             ? item.images.filter(Boolean)
                             : [item.image_url ? item.image_url : PLACEHOLDER]
                     }));
@@ -5607,6 +5629,12 @@
             if (this._homepageData) {
                 this.applyHomepageData(this._homepageData);
             }
+
+            // If a user clicks a CTA/nav item while the initial API requests are
+            // still running, the hash may change before the hashchange listener is
+            // registered. Handle the current route once init is complete so first
+            // load navigation always lands on the intended page.
+            this.handleRoute();
         };
 
         app.applyHomepageData = function(hp) {
