@@ -3,16 +3,26 @@ const ProductModel = require('../models/productModel');
 const { createError } = require('../middleware/errorHandler');
 
 // ─── GET /api/products ────────────────────────────────────────────────────────
+const parsePositiveInteger = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 const getProducts = async (req, res, next) => {
   try {
-    const { category_id, search, page = 1, limit = 20 } = req.query;
+    const { category_id, search } = req.query;
+    const page = parsePositiveInteger(req.query.page, 1);
+    const limit = parsePositiveInteger(req.query.limit);
     const products = await ProductModel.findAll({
       category_id: category_id ? Number(category_id) : undefined,
       search,
-      page:  Number(page),
-      limit: Number(limit),
+      page,
+      limit,
     });
-    res.json({ page: Number(page), limit: Number(limit), data: products });
+
+    res.json({ page, limit: limit || null, data: products });
   } catch (err) {
     next(err);
   }
