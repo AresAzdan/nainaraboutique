@@ -2126,8 +2126,12 @@
                 
                 this.updateItemsPerPage();
                 window.addEventListener('resize', () => {
-                    this.updateItemsPerPage();
-                    this.renderShop(); 
+                    // Mobile browsers fire resize while scrolling as the address bar
+                    // expands/collapses. Re-rendering the grid on those events
+                    // destroys/recreates product images and causes a visible flicker.
+                    if (this.updateItemsPerPage()) {
+                        this.renderShop();
+                    }
                 });
 
                 window.addEventListener('hashchange', () => this.handleRoute());
@@ -2143,7 +2147,10 @@
             },
 
             updateItemsPerPage() {
-                this.data.itemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                const nextItemsPerPage = window.innerWidth > 768 ? 18 : 6;
+                if (this.data.itemsPerPage === nextItemsPerPage) return false;
+                this.data.itemsPerPage = nextItemsPerPage;
+                return true;
             },
 
             initLanguage() {
