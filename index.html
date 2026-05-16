@@ -5629,6 +5629,7 @@
                         size_guide_id: item.size_guide_id || null,
                         size_guide_data: item.size_guide_data || null,
                         size_guide: item.size_guide || null,
+
                         images: Array.isArray(item.images) && item.images.length > 0
                             ? item.images.filter(Boolean)
                             : [item.image_url ? item.image_url : PLACEHOLDER]
