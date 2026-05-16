@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS orders            CASCADE;
 DROP TABLE IF EXISTS cart_items        CASCADE;
 DROP TABLE IF EXISTS carts             CASCADE;
 DROP TABLE IF EXISTS discounts         CASCADE;
+DROP TABLE IF EXISTS size_guides       CASCADE;
 DROP TABLE IF EXISTS products          CASCADE;
 DROP TABLE IF EXISTS categories        CASCADE;
 DROP TABLE IF EXISTS users             CASCADE;
@@ -70,8 +71,26 @@ CREATE TABLE products (
   stock       INTEGER        NOT NULL DEFAULT 0 CHECK (stock >= 0),
   image_url   TEXT,
   category_id INTEGER        REFERENCES categories(id) ON DELETE SET NULL,
+  size_guide_id INTEGER,
+  size_guide_data JSONB,
   created_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
+
+-- -------------------------
+-- REUSABLE SIZE GUIDES
+-- -------------------------
+CREATE TABLE size_guides (
+  id         SERIAL PRIMARY KEY,
+  name       VARCHAR(120) NOT NULL,
+  columns    JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  rows       JSONB        NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE products
+  ADD CONSTRAINT products_size_guide_id_fkey
+  FOREIGN KEY (size_guide_id) REFERENCES size_guides(id) ON DELETE SET NULL;
 
 -- -------------------------
 -- CARTS

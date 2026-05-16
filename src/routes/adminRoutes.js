@@ -15,6 +15,7 @@ const { getAllCustomers, getCustomer } = require('../controllers/customerControl
 const { getAllPromoCodes, createPromoCode, deletePromoCode } = require('../controllers/promoController');
 const { uploadImages } = require('../controllers/uploadController');
 const { updateHomepage } = require('../controllers/settingsController');
+const { getSizeGuides, createSizeGuide, updateSizeGuide, deleteSizeGuide } = require('../controllers/sizeGuideController');
 
 // All admin routes require authentication + admin role
 router.use(authenticate, authorizeAdmin);
@@ -28,6 +29,12 @@ router.put('/homepage', updateHomepage);
 
 // ── Upload ────────────────────────────────────
 router.post('/upload', ...uploadImages);
+
+// ── Size Guides ────────────────────────────────
+router.get('/size-guides',       getSizeGuides);
+router.post('/size-guides',      createSizeGuide);
+router.put('/size-guides/:id',   updateSizeGuide);
+router.delete('/size-guides/:id', deleteSizeGuide);
 
 // ── Products ──────────────────────────────────
 router.post('/products',       validate(['name', 'price']), createProduct);
