@@ -58,8 +58,7 @@ const ProductModel = {
     return new Set(rows.map(r => r.product_id));
   },
 
-  async findAll({ category_id, search, page = 1, limit = 20 } = {}) {
-    const offset = (page - 1) * limit;
+  async findAll({ category_id, search, page = 1, limit } = {}) {
     const conditions = [];
     const values = [];
 
@@ -73,7 +72,13 @@ const ProductModel = {
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    values.push(limit, offset);
+    let pagination = '';
+
+    if (limit) {
+      const offset = (page - 1) * limit;
+      values.push(limit, offset);
+      pagination = `LIMIT $${values.length - 1} OFFSET $${values.length}`;
+    }
 
     const { rows } = await db.query(
       `SELECT p.*, c.name AS category_name
@@ -81,7 +86,7 @@ const ProductModel = {
        LEFT JOIN categories c ON p.category_id = c.id
        ${where}
        ORDER BY p.created_at DESC
-       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+       ${pagination}`,
       values
     );
 

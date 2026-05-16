@@ -174,8 +174,8 @@ POST /api/auth/login
 **Query parameters for GET /api/products:**
 - `category_id` — filter by category
 - `search` — search by name or description
-- `page` — page number (default: 1)
-- `limit` — items per page (default: 20)
+- `page` — page number when using `limit` (default: 1)
+- `limit` — optional items per page; omit it to return all matching products
 
 ```
 GET /api/products?search=laptop&category_id=1&page=1&limit=10
