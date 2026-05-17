@@ -13,14 +13,13 @@ const adminRoutes    = require('./routes/adminRoutes');
 const paymentRoutes  = require('./routes/paymentRoutes');
 const returnRoutes   = require('./routes/returnRoutes');
 const reviewRoutes   = require('./routes/reviewRoutes');
-const discountRoutes = require('./routes/discountRoutes');
-app.use('/api/admin/discounts', discountRoutes);
 
 const { handleNotification } = require('./controllers/paymentController');
 const { validatePromoCode }  = require('./controllers/promoController');
+const { adminDeleteOrder }    = require('./controllers/orderController');
 const { getHomepage }        = require('./controllers/settingsController');
 const shippingRoutes         = require('./routes/shippingRoutes');
-const { authenticate }       = require('./middleware/auth');
+const { authenticate, authorizeAdmin } = require('./middleware/auth');
 const { errorHandler }       = require('./middleware/errorHandler');
 
 const app = express();
