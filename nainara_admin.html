@@ -452,6 +452,14 @@
         .color-helper-text { color: var(--text-muted); font-size: 11px; margin-top: 8px; display: block; line-height: 1.4; }
         .color-chip-preview { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; flex-shrink: 0; }
 
+        .image-eyedropper-panel { margin-top: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; }
+        .image-eyedropper-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+        .image-eyedropper-title { font-size: 12px; font-weight: 700; color: var(--primary); }
+        .image-eyedropper-canvas { width: 100%; max-height: 260px; border: 1px solid var(--border-color); border-radius: 8px; cursor: crosshair; background: #f3f4f6; object-fit: contain; }
+        .image-eyedropper-thumbs { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; }
+        .image-eyedropper-thumb { width: 42px; height: 42px; object-fit: cover; border: 2px solid transparent; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+        .image-eyedropper-thumb.active { border-color: var(--primary); }
+
         .error-text { color: var(--danger); font-size: 12px; margin-top: 4px; display: block; }
 
         #p-image-preview {
@@ -1143,8 +1151,22 @@
                             <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>#5D5340</span>
                         </div>
                         <small class="color-helper-text">
+
+                            Use the color wheel for an exact shade, enter a hex code manually, or click Eyedropper to sample from selected product images.
+                        </small>
+                        <div id="image-eyedropper-panel" class="image-eyedropper-panel hidden">
+                            <div class="image-eyedropper-header">
+                                <span class="image-eyedropper-title">Click the product image to sample a color</span>
+                                <button type="button" class="btn-secondary" style="padding:4px 8px;margin:0;font-size:11px;" onclick="app.closeImageColorPicker()">Close</button>
+                            </div>
+                            <canvas id="image-eyedropper-canvas" class="image-eyedropper-canvas" onclick="app.sampleImageColorFromCanvas(event)"></canvas>
+                            <div id="image-eyedropper-thumbs" class="image-eyedropper-thumbs"></div>
+                            <small class="color-helper-text">Tip: upload/select product photos first, then click an exact spot on the image.</small>
+                        </div>
+                      
                             Use the color wheel for an exact shade, enter a hex code manually, or use Eyedropper when your browser supports it.
                         </small>
+
                     </div>
                 </div>
                 <div class="form-group"><label class="form-label">Weight (grams) <span style="color:#9ca3af;font-weight:400;">— used for shipping cost</span></label><input type="number" id="p-weight" class="form-input" placeholder="e.g. 500" min="1" value="500"></div>
@@ -2280,7 +2302,7 @@
             // local previews (base64, belum di-upload)
             const pending  = app._pendingPreviews || [];
             const total = existing.length + pending.length;
-            if (!total) { grid.innerHTML = ''; return; }
+            if (!total) { grid.innerHTML = ''; this.closeImageColorPicker(); this._updateEyedropperButton(); return; }
 
             let html = '';
             existing.forEach((url, i) => {
@@ -2299,6 +2321,7 @@
                 </div>`;
             });
             grid.innerHTML = html;
+            this._updateEyedropperButton();
         },
 
         removeImage: function(type, index) {
@@ -2487,6 +2510,14 @@
         _updateEyedropperButton: function() {
             const btn = document.getElementById('btn-eyedropper');
             if (!btn) return;
+          
+            const hasImages = this.getSelectedProductImageSources().length > 0;
+            const supportsScreenPicker = 'EyeDropper' in window;
+            btn.disabled = false;
+            btn.title = hasImages
+                ? 'Pick a color from selected product images'
+                : (supportsScreenPicker ? 'Pick a color from the screen' : 'Upload product images to sample colors');
+
             const supported = 'EyeDropper' in window;
             btn.disabled = !supported;
             btn.title = supported ? 'Pick a color from the screen' : 'Eyedropper is not supported in this browser';
@@ -2566,9 +2597,88 @@
             }
         },
 
+        getSelectedProductImageSources: function() {
+            return [
+                ...normalizeImageList(this.currentImages || []),
+                ...(this._pendingPreviews || [])
+            ].filter(Boolean);
+        },
+
+        closeImageColorPicker: function() {
+            const panel = document.getElementById('image-eyedropper-panel');
+            if (panel) panel.classList.add('hidden');
+        },
+
+        openImageColorPicker: function(src) {
+            const sources = this.getSelectedProductImageSources();
+            if (!sources.length) {
+                this.showToast('⚠️ Upload or select product images first, then use Eyedropper.');
+                return;
+            }
+            const selectedSrc = src || sources[0];
+            const panel = document.getElementById('image-eyedropper-panel');
+            const canvas = document.getElementById('image-eyedropper-canvas');
+            const thumbs = document.getElementById('image-eyedropper-thumbs');
+            if (!panel || !canvas) return;
+            panel.classList.remove('hidden');
+            if (thumbs) {
+                thumbs.innerHTML = sources.map((imageSrc, i) => {
+                    const safeSrc = this.escapeHtml(imageSrc);
+                    const active = imageSrc === selectedSrc ? ' active' : (!selectedSrc && i === 0 ? ' active' : '');
+                    return '<img src="' + safeSrc + '" class="image-eyedropper-thumb' + active + '" onclick="app.openImageColorPickerByIndex(' + i + ')" alt="Product image color source">';
+                }).join('');
+            }
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+            const img = new Image();
+            if (!selectedSrc.startsWith('data:')) img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const maxWidth = 380;
+                const scale = Math.min(1, maxWidth / (img.naturalWidth || img.width || maxWidth));
+                canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+                canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+            img.onerror = () => this.showToast('⚠️ Could not load that image for color picking. Try a newly uploaded image.');
+            img.src = selectedSrc;
+        },
+
+        openImageColorPickerByIndex: function(index) {
+            const sources = this.getSelectedProductImageSources();
+            this.openImageColorPicker(sources[index] || sources[0]);
+        },
+
+        sampleImageColorFromCanvas: function(event) {
+            const canvas = document.getElementById('image-eyedropper-canvas');
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
+            const y = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+            try {
+                const pixel = canvas.getContext('2d', { willReadFrequently: true }).getImageData(x, y, 1, 1).data;
+                const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+                this.handleColorPickerChange(hex);
+                this.showToast('✅ Sampled ' + hex + ' from product image');
+            } catch (err) {
+                this.showToast('⚠️ Browser blocked sampling this image. Try uploading the image again before saving.');
+            }
+        },
+
+        pickColorWithEyedropper: async function() {
+            const sources = this.getSelectedProductImageSources();
+            if (sources.length) {
+                this.openImageColorPicker(sources[0]);
+                return;
+            }
+            if (!('EyeDropper' in window)) {
+                this.showToast('⚠️ Upload product images first to sample colors, or use the color wheel / hex field.');
+
         pickColorWithEyedropper: async function() {
             if (!('EyeDropper' in window)) {
                 this.showToast('⚠️ Eyedropper is not supported in this browser. Please use the color wheel or hex field.');
+
                 return;
             }
             const btn = document.getElementById('btn-eyedropper');
