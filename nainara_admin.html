@@ -441,6 +441,20 @@
         .form-label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 500; }
         .form-input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; }
         textarea.form-input { resize: vertical; min-height: 80px; }
+        .color-picker-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; background: #f9fafb; }
+        .color-picker-row { display: flex; gap: 10px; align-items: center; }
+        .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; flex-shrink: 0; }
+        .color-picker-input::-webkit-color-swatch-wrapper { padding: 0; }
+        .color-picker-input::-webkit-color-swatch { border: none; border-radius: 6px; }
+        .color-picker-input::-moz-color-swatch { border: none; border-radius: 6px; }
+        .color-tool-button { padding: 10px 12px; margin: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+        .color-helper-text { color: var(--text-muted); font-size: 11px; margin-top: 8px; display: block; line-height: 1.4; }
+        .color-chip-preview { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; flex-shrink: 0; }
+        .color-swatch-presets { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+        .color-swatch-preset { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.16); cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
+        .color-swatch-preset:hover { transform: scale(1.08); border-color: var(--primary); }
+        .color-swatch-preset.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(70,62,49,0.16); }
+
         .error-text { color: var(--danger); font-size: 12px; margin-top: 4px; display: block; }
 
         #p-image-preview {
@@ -1117,18 +1131,17 @@
                 <div class="form-group">
                     <label class="form-label">Color Variants</label>
                     <div id="color-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:0;"></div>
-                    <div id="color-swatches" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" id="p-color-input" class="form-input"
-                            placeholder="Type a color, press Enter or comma"
-                            style="flex:1;" onkeydown="app.handleColorKey(event)">
-                        <button type="button" class="btn-secondary"
-                            style="padding:8px 12px;margin:0;white-space:nowrap;"
-                            onclick="app.addColorChip()">+ Add</button>
+                    <div class="color-picker-card">
+                        <div class="color-picker-row">
+                            <input type="color" id="p-color-picker" class="color-picker-input" value="#5d5340" aria-label="Choose exact product color" oninput="app.handleColorPickerChange(this.value)">
+                            <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
+                            <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>Selected color</span>
+                        </div>
+                        <div id="color-swatches" class="color-swatch-presets"></div>
+                        <small class="color-helper-text">
+                            Use the color wheel for an exact shade, or click a swatch to add common colors.
+                        </small>
                     </div>
-                    <small style="color:var(--text-muted);font-size:11px;margin-top:4px;display:block;">
-                        Click a swatch or type and press Enter to add colors
-                    </small>
                 </div>
                 <div class="form-group"><label class="form-label">Weight (grams) <span style="color:#9ca3af;font-weight:400;">— used for shipping cost</span></label><input type="number" id="p-weight" class="form-input" placeholder="e.g. 500" min="1" value="500"></div>
                 <div class="form-group"><label class="form-label">Price</label><input type="number" step="0.01" id="p-price" class="form-input"><small id="err-price" class="error-text hidden">Price must be greater than 0.</small></div>
@@ -2194,7 +2207,7 @@
                 const bgStyle=prod.image?`background-image:url(${prod.image})`:'background-color:#f3f4f6';
                 const discountInfo=this.getBestDiscount(prod.id);
                 let priceHtml=discountInfo.hasDiscount?`<div><span class="old-price">${this.formatPrice(prod.price)}</span><span class="badge badge-danger" style="font-size:10px;padding:2px 6px">-${discountInfo.percent}%</span></div><div style="font-weight:600;color:var(--danger)">${this.formatPrice(discountInfo.finalPrice)}</div>`:this.formatPrice(prod.price);
-                tbody.innerHTML+=`<tr id="row-${prod.id}"><td data-label="Product"><div style="display:flex;align-items:center;gap:12px;justify-content:flex-end;"><div class="product-image" style="${bgStyle};width:40px;height:40px;flex-shrink:0;"></div><div style="text-align:right;"><div style="font-weight:500;">${prod.name}</div><div style="font-size:12px;color:var(--text-muted);">Color: ${prod.color||'-'}</div></div></div></td><td data-label="Category"><span class="badge badge-info">${this.getCategoryName(prod.categoryId)}</span></td><td data-label="Price">${priceHtml}</td><td data-label="Stock">${stockDisplay}</td><td data-label="Actions" class="text-right"><button class="btn-secondary" onclick="app.openProductModal(${prod.id})">Edit</button><button class="btn-danger" onclick="app.deleteProduct(${prod.id})">Delete</button></td></tr>`;
+                tbody.innerHTML+=`<tr id="row-${prod.id}"><td data-label="Product"><div style="display:flex;align-items:center;gap:12px;justify-content:flex-end;"><div class="product-image" style="${bgStyle};width:40px;height:40px;flex-shrink:0;"></div><div style="text-align:right;"><div style="font-weight:500;">${prod.name}</div><div style="font-size:12px;color:var(--text-muted);">Color: ${this.renderColorSummary(prod.color)}</div></div></div></td><td data-label="Category"><span class="badge badge-info">${this.getCategoryName(prod.categoryId)}</span></td><td data-label="Price">${priceHtml}</td><td data-label="Stock">${stockDisplay}</td><td data-label="Actions" class="text-right"><button class="btn-secondary" onclick="app.openProductModal(${prod.id})">Edit</button><button class="btn-danger" onclick="app.deleteProduct(${prod.id})">Delete</button></td></tr>`;
             });
         },
 
@@ -2432,64 +2445,122 @@
         // ── COLOR CHIP MANAGEMENT ──────────────────────────────────────
         _colorList: [],
 
+        _defaultPickerColor: '#5D5340',
+        _colorPresets: ['#000000','#FFFFFF','#E7D7C1','#C8A46A','#8B5A2B','#D6A5A5','#B76E79','#C0392B','#E67E22','#F1C40F','#2ECC71','#1ABC9C','#3498DB','#2C3E50','#9B59B6'],
+
+        _normalizeHexColor: function(value) {
+            const raw = String(value || '').trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toUpperCase();
+            if (/^#[0-9a-fA-F]{3}$/.test(raw)) {
+                return '#' + raw.slice(1).split('').map(ch => ch + ch).join('').toUpperCase();
+            }
+            return '';
+        },
+
+        _canPreviewColor: function(value) {
+            const raw = String(value || '').trim();
+            return !!raw && (!window.CSS || !CSS.supports || CSS.supports('color', raw));
+        },
+
+        _formatColorValue: function(value) {
+            const hex = this._normalizeHexColor(value);
+            return hex || String(value || '').trim().toLowerCase();
+        },
+
+        _displayColorName: function(value, index) {
+            const color = String(value || '').trim();
+            return this._normalizeHexColor(color) ? 'Color ' + (index + 1) : color;
+        },
+
+        _renderColorLabel: function(value, index, dotSize = 10) {
+            const color = String(value || '').trim();
+            const bg = this._canPreviewColor(color) ? color : '#f3f4f6';
+            return '<span style="display:inline-flex;align-items:center;gap:5px;">'
+                + '<span style="width:' + dotSize + 'px;height:' + dotSize + 'px;border-radius:50%;background:' + this.escapeHtml(bg) + ';border:1px solid rgba(0,0,0,0.2);display:inline-block;flex-shrink:0;"></span>'
+                + this.escapeHtml(this._displayColorName(color, index))
+                + '</span>';
+        },
+
+        renderColorSummary: function(colorStr) {
+            const colors = colorStr ? String(colorStr).split(',').map(c => c.trim()).filter(Boolean) : [];
+            if (!colors.length) return '-';
+            return '<span style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;">'
+                + colors.slice(0, 5).map((color, i) => {
+                    const bg = this._canPreviewColor(color) ? color : '#f3f4f6';
+                    return '<span aria-label="' + this.escapeHtml(this._displayColorName(color, i)) + '" style="width:13px;height:13px;border-radius:50%;background:' + this.escapeHtml(bg) + ';border:1px solid rgba(0,0,0,0.18);display:inline-block;"></span>';
+                }).join('')
+                + (colors.length > 5 ? '<span style="font-size:11px;color:var(--text-muted);">+' + (colors.length - 5) + '</span>' : '')
+                + '</span>';
+        },
+
+        _setColorPickerValue: function(value) {
+            const picker = document.getElementById('p-color-picker');
+            const preview = document.getElementById('color-picker-preview');
+            const hex = this._normalizeHexColor(value) || this._defaultPickerColor;
+            if (picker) picker.value = hex;
+            if (preview) {
+                preview.innerHTML = '<span class="color-chip-preview" style="background:' + this.escapeHtml(hex) + ';"></span>Selected color';
+            }
+        },
+
         initColorInput: function(colorStr) {
             this._colorList = colorStr ? colorStr.split(',').map(c => c.trim()).filter(Boolean) : [];
             this.renderColorChips();
+            this._setColorPickerValue(this._colorList[0] || this._defaultPickerColor);
         },
 
         renderColorChips: function() {
             const chipsEl = document.getElementById('color-chips');
             const swatchEl = document.getElementById('color-swatches');
             if (!chipsEl) return;
-            chipsEl.innerHTML = this._colorList.map(function(c, i) {
+            chipsEl.innerHTML = this._colorList.map((c, i) => {
+                const label = this.escapeHtml(this._displayColorName(c, i));
+                const bg = this._canPreviewColor(c) ? c : '#f3f4f6';
                 return '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:500;">'
-                    + '<span style="width:12px;height:12px;border-radius:50%;background:' + c + ';border:1px solid rgba(0,0,0,0.15);display:inline-block;"></span>'
-                    + c
-                    + '<button type="button" onclick="app.removeColorChip(' + i + ')" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:0 0 0 2px;">&times;</button>'
+                    + '<span class="color-chip-preview" style="background:' + this.escapeHtml(bg) + ';"></span>'
+                    + label
+                    + '<button type="button" aria-label="Remove ' + label + '" onclick="app.removeColorChip(' + i + ')" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:0 0 0 2px;">&times;</button>'
                     + '</span>';
             }).join('');
             if (swatchEl) {
-                var presets = ['red','blue','green','black','white','yellow','pink','purple','orange','brown','gray','navy','beige','gold','silver'];
-                var self = this;
-                swatchEl.innerHTML = presets.map(function(c) {
-                    var border = self._colorList.includes(c) ? '#463e31' : 'rgba(0,0,0,0.15)';
-                    return '<button type="button" title="' + c + '" onclick="app.addColorFromSwatch(&#39;' + c + '&#39;)" style="width:22px;height:22px;border-radius:50%;background:' + c + ';border:2px solid ' + border + ';cursor:pointer;transition:transform 0.1s;"></button>';
+                swatchEl.innerHTML = this._colorPresets.map(color => {
+                    const active = this._colorList.some(c => c.toLowerCase() === color.toLowerCase()) ? ' active' : '';
+                    return '<button type="button" class="color-swatch-preset' + active + '" style="background:' + color + ';" onclick="app.addColorFromSwatch(\'' + color + '\')" aria-label="Add color swatch"></button>';
                 }).join('');
             }
         },
 
+        handleColorPickerChange: function(value) {
+            this._setColorPickerValue(value);
+        },
+
         addColorChip: function() {
-            const input = document.getElementById('p-color-input');
-            if (!input) return;
-            const val = input.value.trim().toLowerCase();
-            if (val && !this._colorList.includes(val)) {
+            const picker = document.getElementById('p-color-picker');
+            const val = this._formatColorValue(picker?.value || this._defaultPickerColor);
+            const exists = this._colorList.some(c => c.toLowerCase() === val.toLowerCase());
+            if (val && !exists) {
                 this._colorList.push(val);
                 this.renderColorChips();
                 if (this._sizeMode === 'multi') this.renderSizeRows();
             }
-            input.value = '';
-            input.focus();
+            this._setColorPickerValue(val || this._defaultPickerColor);
         },
 
         addColorFromSwatch: function(color) {
-            if (!this._colorList.includes(color)) {
-                this._colorList.push(color);
+            const val = this._formatColorValue(color);
+            if (!this._colorList.some(c => c.toLowerCase() === val.toLowerCase())) {
+                this._colorList.push(val);
                 this.renderColorChips();
                 if (this._sizeMode === 'multi') this.renderSizeRows();
             }
+            this._setColorPickerValue(val);
         },
 
         removeColorChip: function(index) {
             this._colorList.splice(index, 1);
             this.renderColorChips();
+            this._setColorPickerValue(this._colorList[0] || this._defaultPickerColor);
             if (this._sizeMode === 'multi') this.renderSizeRows();
-        },
-
-        handleColorKey: function(e) {
-            if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                this.addColorChip();
-            }
         },
 
         // ── SIZE + STOCK MANAGEMENT ───────────────────────────────────
@@ -2630,10 +2701,8 @@
                         <thead>
                             <tr>
                                 <th style="text-align:left;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:4px 0 0 0;min-width:70px;">Size</th>
-                                ${colors.map(c => `<th style="text-align:center;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;white-space:nowrap;">
-                                    <span style="display:inline-flex;align-items:center;gap:5px;">
-                                        <span style="width:10px;height:10px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,0.2);display:inline-block;"></span>${c}
-                                    </span>
+                                ${colors.map((c, i) => `<th style="text-align:center;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;white-space:nowrap;">
+                                    ${this._renderColorLabel(c, i, 10)}
                                 </th>`).join('')}
                                 <th style="text-align:center;padding:8px 10px;background:#f3f4f6;border:1px solid #e5e7eb;color:#9ca3af;">Sub-total</th>
                                 <th style="background:#f3f4f6;border:1px solid #e5e7eb;width:30px;"></th>
@@ -2804,7 +2873,8 @@
             document.getElementById('product-modal').classList.add('hidden');
         },
 
-        handleProductSubmit: async function(e) {
+        handleProductSubmit: function(e) {
+            return (async () => {
             e.preventDefault();
             let isValid=true;
             const nameInput=document.getElementById('p-name'), priceInput=document.getElementById('p-price');
@@ -2864,6 +2934,7 @@
                 this.closeModal(); this.renderProducts();
             } catch(err) { this.showToast('⚠️ '+err.message); }
             finally { const btnSave=document.getElementById('btn-save'); if(btnSave){btnSave.classList.remove('btn-loading');btnSave.textContent=id?'Save Changes':'Save Product';} }
+                    })();
         },
 
         deleteProduct: function(id) {
@@ -3042,11 +3113,10 @@
 
                 if (sizes.length === 0) {
                     // Only colors, no sizes
-                    colors.forEach(color => {
+                    colors.forEach((color, idx) => {
                         const qty = typeof ss[color] === 'number' ? ss[color] : 0;
                         html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f3f4f6;">
-                            <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};border:1px solid rgba(0,0,0,0.15);flex-shrink:0;"></span>
-                            <span style="flex:1;font-size:13px;font-weight:600;color:#374151;text-transform:capitalize;">${color}</span>
+                            ${this._renderColorLabel(color, idx, 12).replace('display:inline-flex;', 'display:inline-flex;flex:1;font-size:13px;font-weight:600;color:#374151;')}
                             <input type="number" min="0" value="${qty}" data-color="${color}"
                                 style="width:80px;text-align:center;padding:5px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:13px;font-weight:600;"
                                 oninput="app._onStockVariantInput(this)">
@@ -3057,10 +3127,8 @@
                     html += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
                         <thead><tr>
                             <th style="padding:7px 8px;background:#f3f4f6;border:1px solid #e5e7eb;text-align:left;">Size \ Color</th>
-                            ${colors.map(c => `<th style="padding:7px 8px;background:#f3f4f6;border:1px solid #e5e7eb;text-align:center;white-space:nowrap;">
-                                <span style="display:inline-flex;align-items:center;gap:4px;">
-                                    <span style="width:9px;height:9px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,0.15);display:inline-block;"></span>${c}
-                                </span></th>`).join('')}
+                            ${colors.map((c, i) => `<th style="padding:7px 8px;background:#f3f4f6;border:1px solid #e5e7eb;text-align:center;white-space:nowrap;">
+                                ${this._renderColorLabel(c, i, 9)}</th>`).join('')}
                         </tr></thead>
                         <tbody>
                             ${sizes.map(size => `<tr>
