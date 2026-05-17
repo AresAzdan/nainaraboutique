@@ -156,6 +156,7 @@
         .btn-danger-solid:disabled { opacity: 0.5; cursor: not-allowed; }
 
 
+        .sidebar-overlay {
             position: fixed;
             top: 0; left: 0;
             width: 100%; height: 100%;
@@ -442,10 +443,9 @@
         .form-input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; }
         textarea.form-input { resize: vertical; min-height: 80px; }
         .color-picker-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; background: #f9fafb; }
-        .color-picker-row { display: flex; gap: 10px; align-items: center; }
-        .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; flex-shrink: 0; }
-        .color-picker-row { display: grid; grid-template-columns: 74px 1fr auto; gap: 10px; align-items: center; }
+        .color-picker-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
         .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; }
+        .color-action-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
         .color-picker-input::-webkit-color-swatch-wrapper { padding: 0; }
         .color-picker-input::-webkit-color-swatch { border: none; border-radius: 6px; }
         .color-picker-input::-moz-color-swatch { border: none; border-radius: 6px; }
@@ -457,8 +457,6 @@
         .color-swatch-preset:hover { transform: scale(1.08); border-color: var(--primary); }
         .color-swatch-preset.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(70,62,49,0.16); }
         .color-tool-button:disabled { opacity: 0.55; cursor: not-allowed; }
-        .color-helper-text { color: var(--text-muted); font-size: 11px; margin-top: 8px; display: block; line-height: 1.4; }
-        .color-chip-preview { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; flex-shrink: 0; }
 
         .image-eyedropper-panel { margin-top: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; }
         .image-eyedropper-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
@@ -629,6 +627,9 @@
             .modal-content, .delete-modal-content, .category-modal-content, .discount-modal-content, .stock-modal-content { width:100%; height:100%; max-height:100vh; border-radius:0; display:flex; flex-direction:column; padding:16px; }
             .modal-content form { flex:1; overflow-y:auto; padding-bottom:80px; }
             .modal-actions { margin-top:auto; background:white; padding-top:12px; border-top:1px solid var(--border-color); }
+            .color-picker-row { grid-template-columns: 64px 1fr; }
+            .color-picker-row #btn-eyedropper { grid-column: 1 / -1; width: 100%; }
+            .color-action-row .color-tool-button { width: 100%; justify-content: center; }
             .delete-modal-content { height:auto; max-height:90vh; width:90%; border-radius:12px; margin:20px; justify-content:center; }
             .status-btn-group { position:fixed; bottom:0; left:0; width:100%; background:white; padding:12px 16px; border-top:1px solid var(--border-color); box-shadow:0 -4px 12px rgba(0,0,0,0.05); z-index:50; flex-wrap:nowrap; overflow-x:auto; gap:8px; }
             #view-order-detail { padding-bottom:80px; }
@@ -1147,28 +1148,20 @@
                     <div class="color-picker-card">
                         <div class="color-picker-row">
                             <input type="color" id="p-color-picker" class="color-picker-input" value="#5d5340" aria-label="Choose exact product color" oninput="app.handleColorPickerChange(this.value)">
+                            <input type="text" id="p-color-input" class="form-input"
+                                placeholder="#C49A6C or color name"
+                                oninput="app.handleColorTextInput(this.value)" onkeydown="app.handleColorKey(event)">
+                            <button type="button" id="btn-eyedropper" class="btn-secondary color-tool-button" onclick="app.pickColorWithEyedropper()" title="Pick a color from product images or the screen">
+                                <i class="ph ph-eyedropper"></i> Eyedropper
+                            </button>
+                        </div>
+                        <div class="color-action-row">
                             <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
                             <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>Selected color</span>
                         </div>
                         <div id="color-swatches" class="color-swatch-presets"></div>
                         <small class="color-helper-text">
-                            Use the color wheel for an exact shade, or click a swatch to add common colors.
-                        </small>
-
-                            <input type="text" id="p-color-input" class="form-input"
-                                placeholder="#C49A6C or color name"
-                                oninput="app.handleColorTextInput(this.value)" onkeydown="app.handleColorKey(event)">
-                            <button type="button" id="btn-eyedropper" class="btn-secondary color-tool-button" onclick="app.pickColorWithEyedropper()" title="Pick a color from the screen">
-                                <i class="ph ph-eyedropper"></i> Eyedropper
-                            </button>
-                        </div>
-                        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
-                            <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
-                            <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>#5D5340</span>
-                        </div>
-                        <small class="color-helper-text">
-
-                            Use the color wheel for an exact shade, enter a hex code manually, or click Eyedropper to sample from selected product images.
+                            Use the color wheel for an exact shade, enter a hex code manually, click a swatch, or use Eyedropper to sample from selected product images.
                         </small>
                         <div id="image-eyedropper-panel" class="image-eyedropper-panel hidden">
                             <div class="image-eyedropper-header">
@@ -1179,10 +1172,6 @@
                             <div id="image-eyedropper-thumbs" class="image-eyedropper-thumbs"></div>
                             <small class="color-helper-text">Tip: upload/select product photos first, then click an exact spot on the image.</small>
                         </div>
-                      
-                            Use the color wheel for an exact shade, enter a hex code manually, or use Eyedropper when your browser supports it.
-                        </small>
-
                     </div>
                 </div>
                 <div class="form-group"><label class="form-label">Weight (grams) <span style="color:#9ca3af;font-weight:400;">— used for shipping cost</span></label><input type="number" id="p-weight" class="form-input" placeholder="e.g. 500" min="1" value="500"></div>
