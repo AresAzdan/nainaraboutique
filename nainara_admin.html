@@ -446,8 +446,6 @@
 
         .color-picker-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: center; }
 
-        .color-picker-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-
         .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; }
         .color-action-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
         .color-picker-input::-webkit-color-swatch-wrapper { padding: 0; }
@@ -625,8 +623,6 @@
             .modal-content form { flex:1; overflow-y:auto; padding-bottom:80px; }
             .modal-actions { margin-top:auto; background:white; padding-top:12px; border-top:1px solid var(--border-color); }
             .color-picker-row { grid-template-columns: 64px 1fr; }
-
-            .color-picker-row #btn-eyedropper { grid-column: 1 / -1; width: 100%; }
 
             .color-action-row .color-tool-button { width: 100%; justify-content: center; }
             .delete-modal-content { height:auto; max-height:90vh; width:90%; border-radius:12px; margin:20px; justify-content:center; }
@@ -1151,10 +1147,6 @@
                                 placeholder="#C49A6C or color name"
                                 oninput="app.handleColorTextInput(this.value)" onkeydown="app.handleColorKey(event)">
 
-                            <button type="button" id="btn-eyedropper" class="btn-secondary color-tool-button" onclick="app.pickColorWithEyedropper()" title="Pick a color from product images or the screen">
-                                <i class="ph ph-eyedropper"></i> Eyedropper
-                            </button>
-
                         </div>
                         <div class="color-action-row">
                             <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
@@ -1166,15 +1158,7 @@
                             Use the color wheel for an exact shade, enter a hex code manually, or click a swatch to add a common color.
                         </small>
 
-                        <div id="image-eyedropper-panel" class="image-eyedropper-panel hidden">
-                            <div class="image-eyedropper-header">
-                                <span class="image-eyedropper-title">Click the product image to sample a color</span>
-                                <button type="button" class="btn-secondary" style="padding:4px 8px;margin:0;font-size:11px;" onclick="app.closeImageColorPicker()">Close</button>
-                            </div>
-                            <canvas id="image-eyedropper-canvas" class="image-eyedropper-canvas" onclick="app.sampleImageColorFromCanvas(event)"></canvas>
-                            <div id="image-eyedropper-thumbs" class="image-eyedropper-thumbs"></div>
-                            <small class="color-helper-text">Tip: upload/select product photos first, then click an exact spot on the image.</small>
-                        </div>
+
 
                     </div>
                 </div>
