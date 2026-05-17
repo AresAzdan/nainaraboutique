@@ -1,8 +1,8 @@
--- ============================================================
+-- ------------------------------------------------------------
 -- Return Request Migration
 -- Run after schema.sql:
 --   psql -U postgres -d ecommerce_db -f return_migration.sql
--- ============================================================
+-- ------------------------------------------------------------
 
 -- 1. Update orders status to include 'return_requested' and 'returned'
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
