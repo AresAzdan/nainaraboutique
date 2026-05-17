@@ -451,6 +451,7 @@
         .color-tool-button:disabled { opacity: 0.55; cursor: not-allowed; }
         .color-helper-text { color: var(--text-muted); font-size: 11px; margin-top: 8px; display: block; line-height: 1.4; }
         .color-chip-preview { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; flex-shrink: 0; }
+
         .image-eyedropper-panel { margin-top: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; }
         .image-eyedropper-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
         .image-eyedropper-title { font-size: 12px; font-weight: 700; color: var(--primary); }
@@ -1150,6 +1151,7 @@
                             <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>#5D5340</span>
                         </div>
                         <small class="color-helper-text">
+
                             Use the color wheel for an exact shade, enter a hex code manually, or click Eyedropper to sample from selected product images.
                         </small>
                         <div id="image-eyedropper-panel" class="image-eyedropper-panel hidden">
@@ -1161,6 +1163,10 @@
                             <div id="image-eyedropper-thumbs" class="image-eyedropper-thumbs"></div>
                             <small class="color-helper-text">Tip: upload/select product photos first, then click an exact spot on the image.</small>
                         </div>
+                      
+                            Use the color wheel for an exact shade, enter a hex code manually, or use Eyedropper when your browser supports it.
+                        </small>
+
                     </div>
                 </div>
                 <div class="form-group"><label class="form-label">Weight (grams) <span style="color:#9ca3af;font-weight:400;">— used for shipping cost</span></label><input type="number" id="p-weight" class="form-input" placeholder="e.g. 500" min="1" value="500"></div>
@@ -2504,12 +2510,17 @@
         _updateEyedropperButton: function() {
             const btn = document.getElementById('btn-eyedropper');
             if (!btn) return;
+          
             const hasImages = this.getSelectedProductImageSources().length > 0;
             const supportsScreenPicker = 'EyeDropper' in window;
             btn.disabled = false;
             btn.title = hasImages
                 ? 'Pick a color from selected product images'
                 : (supportsScreenPicker ? 'Pick a color from the screen' : 'Upload product images to sample colors');
+
+            const supported = 'EyeDropper' in window;
+            btn.disabled = !supported;
+            btn.title = supported ? 'Pick a color from the screen' : 'Eyedropper is not supported in this browser';
         },
 
         initColorInput: function(colorStr) {
@@ -2663,6 +2674,11 @@
             }
             if (!('EyeDropper' in window)) {
                 this.showToast('⚠️ Upload product images first to sample colors, or use the color wheel / hex field.');
+
+        pickColorWithEyedropper: async function() {
+            if (!('EyeDropper' in window)) {
+                this.showToast('⚠️ Eyedropper is not supported in this browser. Please use the color wheel or hex field.');
+
                 return;
             }
             const btn = document.getElementById('btn-eyedropper');
