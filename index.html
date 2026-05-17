@@ -2913,14 +2913,14 @@
                             ${colors.length > 0 ? `
                             <div class="pd-option-group">
                                 <div class="pd-option-label" style="text-transform:uppercase;font-size:0.78rem;letter-spacing:1px;">
-                                    COLOR: <span id="selected-color-label" style="font-weight:700;">${colors[0]}</span>
+                                    COLOR: <span id="selected-color-label" style="font-weight:700;">${this.displayColorName(colors[0], 0)}</span>
                                 </div>
                                 <div class="color-swatches-row">
                                     ${colors.map((c, i) => `
                                         <div class="color-circle ${i===0?'active':''}"
                                             style="background-color:${c};"
-                                            title="${c}"
-                                            onclick="app.selectColor(this,'${c}')"></div>
+                                            title="${this.displayColorName(c, i)}"
+                                            onclick="app.selectColor(this,'${c}',${i})"></div>
                                     `).join('')}
                                 </div>
                             </div>` : ''}
@@ -3176,11 +3176,16 @@
                 });
             },
 
-            selectColor(el, colorName) {
+            displayColorName(colorName, index = 0) {
+                const color = String(colorName || '').trim();
+                return /^#[0-9a-fA-F]{6}$/.test(color) || /^#[0-9a-fA-F]{3}$/.test(color) ? `Color ${index + 1}` : color;
+            },
+
+            selectColor(el, colorName, index = 0) {
                 document.querySelectorAll('.color-circle').forEach(c => c.classList.remove('active'));
                 el.classList.add('active');
                 const label = document.getElementById('selected-color-label');
-                if (label && colorName) label.textContent = colorName;
+                if (label && colorName) label.textContent = this.displayColorName(colorName, index);
             },
 
             escapeHTML(value) {
