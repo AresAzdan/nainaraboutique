@@ -2748,15 +2748,6 @@
         },
 
         pickColorWithEyedropper: async function() {
-            const sources = this.getSelectedProductImageSources();
-            if (sources.length) {
-                this.openImageColorPicker(sources[0]);
-                return;
-            }
-            if (!('EyeDropper' in window)) {
-                this.showToast('⚠️ Upload product images first to sample colors, or use the color wheel / hex field.');
-
-        pickColorWithEyedropper: async function() {
             if (!('EyeDropper' in window)) {
                 this.showToast('⚠️ Eyedropper is not supported in this browser. Please use the color wheel or hex field.');
 
