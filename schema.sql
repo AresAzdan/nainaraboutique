@@ -1,8 +1,8 @@
--- ============================================================
+-- ------------------------------------------------------------
 -- E-Commerce API - Full Database Schema
 -- Run this file to set up the database:
 --   psql -U postgres -d ecommerce_db -f schema.sql
--- ============================================================
+-- ------------------------------------------------------------
 
 -- Drop tables in reverse dependency order (for clean resets)
 DROP TABLE IF EXISTS promo_code_uses   CASCADE;
