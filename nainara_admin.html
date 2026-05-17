@@ -444,6 +444,8 @@
         .color-picker-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; background: #f9fafb; }
         .color-picker-row { display: flex; gap: 10px; align-items: center; }
         .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; flex-shrink: 0; }
+        .color-picker-row { display: grid; grid-template-columns: 74px 1fr auto; gap: 10px; align-items: center; }
+        .color-picker-input { width: 74px; height: 46px; padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: white; cursor: pointer; }
         .color-picker-input::-webkit-color-swatch-wrapper { padding: 0; }
         .color-picker-input::-webkit-color-swatch { border: none; border-radius: 6px; }
         .color-picker-input::-moz-color-swatch { border: none; border-radius: 6px; }
@@ -454,6 +456,17 @@
         .color-swatch-preset { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.16); cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
         .color-swatch-preset:hover { transform: scale(1.08); border-color: var(--primary); }
         .color-swatch-preset.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(70,62,49,0.16); }
+        .color-tool-button:disabled { opacity: 0.55; cursor: not-allowed; }
+        .color-helper-text { color: var(--text-muted); font-size: 11px; margin-top: 8px; display: block; line-height: 1.4; }
+        .color-chip-preview { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; flex-shrink: 0; }
+
+        .image-eyedropper-panel { margin-top: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; }
+        .image-eyedropper-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+        .image-eyedropper-title { font-size: 12px; font-weight: 700; color: var(--primary); }
+        .image-eyedropper-canvas { width: 100%; max-height: 260px; border: 1px solid var(--border-color); border-radius: 8px; cursor: crosshair; background: #f3f4f6; object-fit: contain; }
+        .image-eyedropper-thumbs { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; }
+        .image-eyedropper-thumb { width: 42px; height: 42px; object-fit: cover; border: 2px solid transparent; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+        .image-eyedropper-thumb.active { border-color: var(--primary); }
 
         .error-text { color: var(--danger); font-size: 12px; margin-top: 4px; display: block; }
 
@@ -1141,6 +1154,35 @@
                         <small class="color-helper-text">
                             Use the color wheel for an exact shade, or click a swatch to add common colors.
                         </small>
+
+                            <input type="text" id="p-color-input" class="form-input"
+                                placeholder="#C49A6C or color name"
+                                oninput="app.handleColorTextInput(this.value)" onkeydown="app.handleColorKey(event)">
+                            <button type="button" id="btn-eyedropper" class="btn-secondary color-tool-button" onclick="app.pickColorWithEyedropper()" title="Pick a color from the screen">
+                                <i class="ph ph-eyedropper"></i> Eyedropper
+                            </button>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+                            <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
+                            <span id="color-picker-preview" style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;"><span class="color-chip-preview" style="background:#5d5340;"></span>#5D5340</span>
+                        </div>
+                        <small class="color-helper-text">
+
+                            Use the color wheel for an exact shade, enter a hex code manually, or click Eyedropper to sample from selected product images.
+                        </small>
+                        <div id="image-eyedropper-panel" class="image-eyedropper-panel hidden">
+                            <div class="image-eyedropper-header">
+                                <span class="image-eyedropper-title">Click the product image to sample a color</span>
+                                <button type="button" class="btn-secondary" style="padding:4px 8px;margin:0;font-size:11px;" onclick="app.closeImageColorPicker()">Close</button>
+                            </div>
+                            <canvas id="image-eyedropper-canvas" class="image-eyedropper-canvas" onclick="app.sampleImageColorFromCanvas(event)"></canvas>
+                            <div id="image-eyedropper-thumbs" class="image-eyedropper-thumbs"></div>
+                            <small class="color-helper-text">Tip: upload/select product photos first, then click an exact spot on the image.</small>
+                        </div>
+                      
+                            Use the color wheel for an exact shade, enter a hex code manually, or use Eyedropper when your browser supports it.
+                        </small>
+
                     </div>
                 </div>
                 <div class="form-group"><label class="form-label">Weight (grams) <span style="color:#9ca3af;font-weight:400;">— used for shipping cost</span></label><input type="number" id="p-weight" class="form-input" placeholder="e.g. 500" min="1" value="500"></div>
@@ -2276,7 +2318,7 @@
             // local previews (base64, belum di-upload)
             const pending  = app._pendingPreviews || [];
             const total = existing.length + pending.length;
-            if (!total) { grid.innerHTML = ''; return; }
+            if (!total) { grid.innerHTML = ''; this.closeImageColorPicker(); this._updateEyedropperButton(); return; }
 
             let html = '';
             existing.forEach((url, i) => {
@@ -2295,6 +2337,7 @@
                 </div>`;
             });
             grid.innerHTML = html;
+            this._updateEyedropperButton();
         },
 
         removeImage: function(type, index) {
@@ -2446,7 +2489,9 @@
         _colorList: [],
 
         _defaultPickerColor: '#5D5340',
+
         _colorPresets: ['#000000','#FFFFFF','#E7D7C1','#C8A46A','#8B5A2B','#D6A5A5','#B76E79','#C0392B','#E67E22','#F1C40F','#2ECC71','#1ABC9C','#3498DB','#2C3E50','#9B59B6'],
+
 
         _normalizeHexColor: function(value) {
             const raw = String(value || '').trim();
@@ -2466,6 +2511,7 @@
             const hex = this._normalizeHexColor(value);
             return hex || String(value || '').trim().toLowerCase();
         },
+
 
         _displayColorName: function(value, index) {
             const color = String(value || '').trim();
@@ -2503,18 +2549,55 @@
             }
         },
 
+
+        _setColorPickerValue: function(value) {
+            const input = document.getElementById('p-color-input');
+            const picker = document.getElementById('p-color-picker');
+            const preview = document.getElementById('color-picker-preview');
+            const hex = this._normalizeHexColor(value);
+            const displayValue = hex || String(value || '').trim();
+            const previewColor = this._canPreviewColor(displayValue) ? displayValue : this._defaultPickerColor;
+            if (input && document.activeElement !== input) input.value = displayValue || this._defaultPickerColor;
+            if (picker) picker.value = hex || this._defaultPickerColor;
+            if (preview) {
+                preview.innerHTML = '<span class="color-chip-preview" style="background:' + this.escapeHtml(previewColor) + ';"></span>' + this.escapeHtml(displayValue || this._defaultPickerColor);
+            }
+        },
+
+        _updateEyedropperButton: function() {
+            const btn = document.getElementById('btn-eyedropper');
+            if (!btn) return;
+          
+            const hasImages = this.getSelectedProductImageSources().length > 0;
+            const supportsScreenPicker = 'EyeDropper' in window;
+            btn.disabled = false;
+            btn.title = hasImages
+                ? 'Pick a color from selected product images'
+                : (supportsScreenPicker ? 'Pick a color from the screen' : 'Upload product images to sample colors');
+
+            const supported = 'EyeDropper' in window;
+            btn.disabled = !supported;
+            btn.title = supported ? 'Pick a color from the screen' : 'Eyedropper is not supported in this browser';
+        },
+
         initColorInput: function(colorStr) {
             this._colorList = colorStr ? colorStr.split(',').map(c => c.trim()).filter(Boolean) : [];
             this.renderColorChips();
             this._setColorPickerValue(this._colorList[0] || this._defaultPickerColor);
+
+            this._updateEyedropperButton();
+
         },
 
         renderColorChips: function() {
             const chipsEl = document.getElementById('color-chips');
-            const swatchEl = document.getElementById('color-swatches');
             if (!chipsEl) return;
             chipsEl.innerHTML = this._colorList.map((c, i) => {
+
                 const label = this.escapeHtml(this._displayColorName(c, i));
+
+                const label = this.escapeHtml(c);
+
                 const bg = this._canPreviewColor(c) ? c : '#f3f4f6';
                 return '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:500;">'
                     + '<span class="color-chip-preview" style="background:' + this.escapeHtml(bg) + ';"></span>'
@@ -2522,12 +2605,29 @@
                     + '<button type="button" aria-label="Remove ' + label + '" onclick="app.removeColorChip(' + i + ')" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:0 0 0 2px;">&times;</button>'
                     + '</span>';
             }).join('');
+
             if (swatchEl) {
                 swatchEl.innerHTML = this._colorPresets.map(color => {
                     const active = this._colorList.some(c => c.toLowerCase() === color.toLowerCase()) ? ' active' : '';
                     return '<button type="button" class="color-swatch-preset' + active + '" style="background:' + color + ';" onclick="app.addColorFromSwatch(\'' + color + '\')" aria-label="Add color swatch"></button>';
                 }).join('');
             }
+
+        },
+
+        handleColorPickerChange: function(value) {
+            const hex = this._normalizeHexColor(value) || this._defaultPickerColor;
+            const input = document.getElementById('p-color-input');
+            if (input) input.value = hex;
+            this._setColorPickerValue(hex);
+        },
+
+        handleColorTextInput: function(value) {
+            const hex = this._normalizeHexColor(value);
+            const picker = document.getElementById('p-color-picker');
+            if (hex && picker) picker.value = hex;
+            this._setColorPickerValue(value);
+
         },
 
         handleColorPickerChange: function(value) {
@@ -2535,8 +2635,14 @@
         },
 
         addColorChip: function() {
+
             const picker = document.getElementById('p-color-picker');
             const val = this._formatColorValue(picker?.value || this._defaultPickerColor);
+
+            const input = document.getElementById('p-color-input');
+            if (!input) return;
+            const val = this._formatColorValue(input.value || document.getElementById('p-color-picker')?.value || this._defaultPickerColor);
+
             const exists = this._colorList.some(c => c.toLowerCase() === val.toLowerCase());
             if (val && !exists) {
                 this._colorList.push(val);
@@ -2544,6 +2650,11 @@
                 if (this._sizeMode === 'multi') this.renderSizeRows();
             }
             this._setColorPickerValue(val || this._defaultPickerColor);
+
+
+            input.focus();
+            input.select();
+
         },
 
         addColorFromSwatch: function(color) {
@@ -2562,6 +2673,111 @@
             this._setColorPickerValue(this._colorList[0] || this._defaultPickerColor);
             if (this._sizeMode === 'multi') this.renderSizeRows();
         },
+
+        handleColorKey: function(e) {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                this.addColorChip();
+            }
+        },
+
+        getSelectedProductImageSources: function() {
+            return [
+                ...normalizeImageList(this.currentImages || []),
+                ...(this._pendingPreviews || [])
+            ].filter(Boolean);
+        },
+
+        closeImageColorPicker: function() {
+            const panel = document.getElementById('image-eyedropper-panel');
+            if (panel) panel.classList.add('hidden');
+        },
+
+        openImageColorPicker: function(src) {
+            const sources = this.getSelectedProductImageSources();
+            if (!sources.length) {
+                this.showToast('⚠️ Upload or select product images first, then use Eyedropper.');
+                return;
+            }
+            const selectedSrc = src || sources[0];
+            const panel = document.getElementById('image-eyedropper-panel');
+            const canvas = document.getElementById('image-eyedropper-canvas');
+            const thumbs = document.getElementById('image-eyedropper-thumbs');
+            if (!panel || !canvas) return;
+            panel.classList.remove('hidden');
+            if (thumbs) {
+                thumbs.innerHTML = sources.map((imageSrc, i) => {
+                    const safeSrc = this.escapeHtml(imageSrc);
+                    const active = imageSrc === selectedSrc ? ' active' : (!selectedSrc && i === 0 ? ' active' : '');
+                    return '<img src="' + safeSrc + '" class="image-eyedropper-thumb' + active + '" onclick="app.openImageColorPickerByIndex(' + i + ')" alt="Product image color source">';
+                }).join('');
+            }
+
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+            const img = new Image();
+            if (!selectedSrc.startsWith('data:')) img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const maxWidth = 380;
+                const scale = Math.min(1, maxWidth / (img.naturalWidth || img.width || maxWidth));
+                canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+                canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+            img.onerror = () => this.showToast('⚠️ Could not load that image for color picking. Try a newly uploaded image.');
+            img.src = selectedSrc;
+        },
+
+        openImageColorPickerByIndex: function(index) {
+            const sources = this.getSelectedProductImageSources();
+            this.openImageColorPicker(sources[index] || sources[0]);
+        },
+
+        sampleImageColorFromCanvas: function(event) {
+            const canvas = document.getElementById('image-eyedropper-canvas');
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.left) * (canvas.width / rect.width));
+            const y = Math.floor((event.clientY - rect.top) * (canvas.height / rect.height));
+            try {
+                const pixel = canvas.getContext('2d', { willReadFrequently: true }).getImageData(x, y, 1, 1).data;
+                const hex = '#' + [pixel[0], pixel[1], pixel[2]].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+                this.handleColorPickerChange(hex);
+                this.showToast('✅ Sampled ' + hex + ' from product image');
+            } catch (err) {
+                this.showToast('⚠️ Browser blocked sampling this image. Try uploading the image again before saving.');
+            }
+        },
+
+        pickColorWithEyedropper: async function() {
+            const sources = this.getSelectedProductImageSources();
+            if (sources.length) {
+                this.openImageColorPicker(sources[0]);
+                return;
+            }
+            if (!('EyeDropper' in window)) {
+                this.showToast('⚠️ Upload product images first to sample colors, or use the color wheel / hex field.');
+
+        pickColorWithEyedropper: async function() {
+            if (!('EyeDropper' in window)) {
+                this.showToast('⚠️ Eyedropper is not supported in this browser. Please use the color wheel or hex field.');
+
+                return;
+            }
+            const btn = document.getElementById('btn-eyedropper');
+            if (btn) btn.disabled = true;
+            try {
+                const result = await new EyeDropper().open();
+                if (result && result.sRGBHex) this.handleColorPickerChange(result.sRGBHex);
+            } catch (err) {
+                if (err && err.name !== 'AbortError') this.showToast('⚠️ Could not pick that color. Please try again.');
+            } finally {
+                if (btn) btn.disabled = false;
+                this._updateEyedropperButton();
+            }
+        },
+
 
         // ── SIZE + STOCK MANAGEMENT ───────────────────────────────────
         // _sizeMode: 'all' | 'multi'
