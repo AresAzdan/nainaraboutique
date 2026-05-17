@@ -2596,8 +2596,6 @@
 
                 const label = this.escapeHtml(this._displayColorName(c, i));
 
-                const label = this.escapeHtml(c);
-
                 const bg = this._canPreviewColor(c) ? c : '#f3f4f6';
                 return '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:500;">'
                     + '<span class="color-chip-preview" style="background:' + this.escapeHtml(bg) + ';"></span>'
