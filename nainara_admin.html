@@ -3478,22 +3478,11 @@
 
         populateCouponProductOptions: function() {
 
-            var optionsEl=document.getElementById('coupon-product-options');
-            var selectEl=document.getElementById('coupon-product-id');
-            if (!optionsEl || !selectEl) return;
-            optionsEl.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
-            selectEl.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-
-
             const options=document.getElementById('coupon-product-options');
             const select=document.getElementById('coupon-product-id');
             if (!options || !select) return;
             options.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
             select.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-
-            const options=document.getElementById('coupon-product-options');
-            if (!options) return;
-            options.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
 
         },
 
