@@ -839,6 +839,9 @@
         .floating-cart-btn:hover { transform: scale(1.1); box-shadow: 0 6px 20px rgba(78, 72, 65, 0.45); }
         .floating-cart-btn .badge { top: -2px; right: -2px; width: 20px; height: 20px; font-size: 0.72rem; border: 2px solid #fff; }
         @media (min-width: 1025px) { .floating-cart-btn { display: none; } }
+        .floating-home-btn { position: fixed; bottom: 96px; right: 23px; width: 39px; height: 39px; background-color: #4E4841; color: #f0eee4; border-radius: 50%; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(78, 72, 65, 0.35); z-index: 1900; font-size: 0.9rem; cursor: pointer; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); text-decoration: none; }
+        .floating-home-btn:hover { transform: scale(1.1); box-shadow: 0 6px 16px rgba(78, 72, 65, 0.45); }
+        @media (max-width: 1024px) { .floating-home-btn { display: flex; } }
 
         /* QTY BUTTONS */
         .qty-btn { width: 28px; height: 28px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1rem; color: var(--text-color); transition: 0.2s; }
@@ -1710,6 +1713,11 @@
             <p style="font-size:0.75rem;color:#999;margin-top:6px;line-height:1.5;">Resto Abu Ali, Bogor, West Java</p>
         </div>
     </div>
+
+    <!-- FLOATING HOME BUTTON (MOBILE) -->
+    <a href="javascript:void(0)" onclick="app.navigateTo('home')" class="floating-home-btn" id="floating-home-btn" title="Back to Home">
+        <i class="fa-solid fa-house"></i>
+    </a>
 
     <!-- FLOATING CART BUTTON (MOBILE) -->
     <a href="javascript:void(0)" onclick="app.navigateTo('cart')" class="floating-cart-btn" id="floating-cart-btn">
