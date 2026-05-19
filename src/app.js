@@ -72,6 +72,24 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
+
+// ─── Public Root Assets (favicon/manifest/robots) ───────────────────────────
+app.get('/favicon.ico', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../favicon.ico'));
+});
+app.get('/favicon-48x48.png', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../favicon-192x192.png'));
+});
+app.get('/apple-touch-icon.png', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../favicon-192x192.png'));
+});
+app.get('/site.webmanifest', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../site.webmanifest'));
+});
+app.get('/robots.txt', (_req, res) => {
+  res.type('text/plain').sendFile(path.join(__dirname, '../robots.txt'));
+});
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
