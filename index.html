@@ -2627,7 +2627,9 @@
                     }
 
                     if (start > 1) {
+
                         buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
+                        buttonsHtml += `<span class="page-link disabled">...</span>`;
                     }
 
                     for (let i = start; i <= end; i++) {
@@ -2635,7 +2637,9 @@
                     }
 
                     if (end < totalPages) {
+
                         buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
+                        buttonsHtml += `<span class="page-link disabled">...</span>`;
                     }
                 } else {
                     for (let i = 1; i <= totalPages; i++) {
@@ -2646,8 +2650,13 @@
                 buttonsHtml += `<button class="page-link ${current === totalPages ? 'disabled' : ''}" onclick="${current < totalPages ? `app.changePage(${current + 1})` : ''}"><i class="fa-solid fa-chevron-right page-icon"></i></button>`;
 
                 const infoText = this.t('pageOf').replace('{current}', current).replace('{total}', totalPages);
+
                 const paginationRowClass = isMobile ? 'pagination-row-mobile' : 'pagination-row-desktop';
                 container.innerHTML = `<span style="font-size: 0.9rem; color: var(--secondary-text); font-family: var(--font-body);">${infoText}</span><div class="${paginationRowClass}" style="${!isMobile ? 'display:flex; gap:8px; justify-content:center; flex-wrap:wrap;' : ''}">${buttonsHtml}</div>`;
+                const paginationRowStyle = isMobile
+                    ? 'display:flex; gap:6px; justify-content:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; white-space:nowrap; width:100%; padding-bottom:2px;'
+                    : 'display:flex; gap:8px; justify-content:center; flex-wrap:wrap;';
+                container.innerHTML = `<span style="font-size: 0.9rem; color: var(--secondary-text); font-family: var(--font-body);">${infoText}</span><div style="${paginationRowStyle}">${buttonsHtml}</div>`;
             },
 
             updateShopHeader() {
