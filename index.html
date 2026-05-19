@@ -2594,6 +2594,7 @@
                 const container = this.dom.paginationContainer;
                 const totalPages = Math.ceil(totalItems / this.data.itemsPerPage);
                 const current = this.data.currentPage;
+                const isMobile = window.matchMedia('(max-width: 768px)').matches;
 
                 if (totalPages <= 1) {
                     container.style.display = 'none';
@@ -2607,9 +2608,38 @@
 
                 let buttonsHtml = '';
                 buttonsHtml += `<button class="page-link ${current === 1 ? 'disabled' : ''}" onclick="${current > 1 ? `app.changePage(${current - 1})` : ''}"><i class="fa-solid fa-chevron-left page-icon"></i></button>`;
-                for (let i = 1; i <= totalPages; i++) {
+
+                const renderPageButton = (i) => {
                     buttonsHtml += `<button class="page-link ${current === i ? 'active' : ''}" onclick="app.changePage(${i})">${i}</button>`;
+                };
+
+                if (isMobile && totalPages > 7) {
+                    const windowSize = 7;
+                    let start = Math.max(1, current - Math.floor(windowSize / 2));
+                    let end = start + windowSize - 1;
+
+                    if (end > totalPages) {
+                        end = totalPages;
+                        start = end - windowSize + 1;
+                    }
+
+                    if (start > 1) {
+                        buttonsHtml += `<span class="page-link disabled">...</span>`;
+                    }
+
+                    for (let i = start; i <= end; i++) {
+                        renderPageButton(i);
+                    }
+
+                    if (end < totalPages) {
+                        buttonsHtml += `<span class="page-link disabled">...</span>`;
+                    }
+                } else {
+                    for (let i = 1; i <= totalPages; i++) {
+                        renderPageButton(i);
+                    }
                 }
+
                 buttonsHtml += `<button class="page-link ${current === totalPages ? 'disabled' : ''}" onclick="${current < totalPages ? `app.changePage(${current + 1})` : ''}"><i class="fa-solid fa-chevron-right page-icon"></i></button>`;
 
                 const infoText = this.t('pageOf').replace('{current}', current).replace('{total}', totalPages);
