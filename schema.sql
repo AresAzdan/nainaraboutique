@@ -167,6 +167,7 @@ CREATE TABLE promo_codes (
   discount_pct      NUMERIC(5, 2)  NOT NULL CHECK (discount_pct > 0 AND discount_pct <= 100),
   applies_to_all    BOOLEAN        NOT NULL DEFAULT true,
   product_id        INTEGER        REFERENCES products(id) ON DELETE SET NULL,
+  product_ids       INTEGER[]      NOT NULL DEFAULT '{}'::INTEGER[],
   max_uses          INTEGER        NOT NULL DEFAULT 100,
   max_uses_per_user INTEGER        NOT NULL DEFAULT 1,
   used_count        INTEGER        NOT NULL DEFAULT 0,
