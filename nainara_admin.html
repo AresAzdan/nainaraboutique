@@ -1382,16 +1382,10 @@
                         </select>
                     </div>
                     <div id="coupon-product-wrap" style="display:none;">
-                        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Select Product</label>
-                        <input id="coupon-product-search" type="text" class="form-input" placeholder="Search product name..." list="coupon-product-options" oninput="app.handleCouponProductSearch()">
-                        <datalist id="coupon-product-options"></datalist>
-                        <select id="coupon-product-id" style="margin-top:8px;width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;" onchange="app.syncCouponProductFromSelect()"></select>
-
-                        <select id="coupon-product-id" style="margin-top:8px;width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;" onchange="app.syncCouponProductFromSelect()"></select>
-
-                        <input id="coupon-product-id" type="hidden" value="">
-                        <select id="coupon-product-id" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;"></select>
-
+                        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Select Products</label>
+                        <input id="coupon-product-search" type="text" class="form-input" placeholder="Search product name..." oninput="app.handleCouponProductSearch()" style="margin-bottom:8px;">
+                        <div id="coupon-product-list" style="max-height:180px;overflow-y:auto;border:1.5px solid #e5e7eb;border-radius:8px;padding:6px;background:#fafafa;"></div>
+                        <div id="coupon-product-selected-label" style="margin-top:6px;font-size:12px;color:#6b7280;"></div>
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -3435,15 +3429,9 @@
                 document.getElementById('coupon-value').value=''; document.getElementById('coupon-min-order').value='';
                 document.getElementById('coupon-limit').value=''; document.getElementById('coupon-expiry').value='';
                 document.getElementById('coupon-no-expiry').checked=false; document.getElementById('coupon-expiry').disabled=false;
-                document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
-
-
-                document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
-
-
-                document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
-
-                document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value='';
+                document.getElementById('coupon-scope').value='all';
+                document.getElementById('coupon-product-search').value='';
+                this._selectedProductIds=[];
 
             } else {
                 const c=this._coupons.find(x=>x.id==editId); if (!c) return;
@@ -3453,10 +3441,9 @@
                 const noExpiry=!c.expires_at;
                 document.getElementById('coupon-no-expiry').checked=noExpiry; document.getElementById('coupon-expiry').disabled=noExpiry;
                 document.getElementById('coupon-expiry').value=noExpiry?'':c.expires_at.split('T')[0];
-                document.getElementById('coupon-scope').value=c.applies_to_all?'all':'product'; document.getElementById('coupon-product-id').value=c.product_id||'';
-
-                const selectedProduct=this.data.products.find(p=>p.id===c.product_id);
-                document.getElementById('coupon-product-search').value=selectedProduct?selectedProduct.name:'';
+                document.getElementById('coupon-scope').value=c.applies_to_all?'all':'product';
+                document.getElementById('coupon-product-search').value='';
+                this._selectedProductIds=c.product_ids?c.product_ids:(c.product_id?[c.product_id]:[]);
             }
             this.populateCouponProductOptions();
             this.toggleCouponScope();
@@ -3476,37 +3463,44 @@
             if (checkbox.checked) document.getElementById('coupon-expiry').value='';
         },
 
-        populateCouponProductOptions: function() {
+        _selectedProductIds: [],
 
-            const options=document.getElementById('coupon-product-options');
-            const select=document.getElementById('coupon-product-id');
-            if (!options || !select) return;
-            options.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
-            select.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+        populateCouponProductOptions: function(keyword) {
+            const list=document.getElementById('coupon-product-list');
+            if (!list) return;
+            const kw=(keyword||'').toLowerCase();
+            const filtered=(this.data.products||[]).filter(p=>!kw||p.name.toLowerCase().includes(kw));
+            if (filtered.length===0) { list.innerHTML='<div style="padding:8px;font-size:13px;color:#9ca3af;">No products found.</div>'; return; }
+            list.innerHTML=filtered.map(p=>{
+                const checked=this._selectedProductIds.includes(p.id)?'checked':'';
+                return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:#374151;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='none'">
+                    <input type="checkbox" value="${p.id}" ${checked} onchange="app.toggleCouponProduct(${p.id})" style="width:15px;height:15px;accent-color:#1f2937;cursor:pointer;">
+                    <span>${p.name}</span>
+                </label>`;
+            }).join('');
+            this._updateCouponSelectedLabel();
+        },
 
+        toggleCouponProduct: function(productId) {
+            const idx=this._selectedProductIds.indexOf(productId);
+            if (idx===-1) this._selectedProductIds.push(productId);
+            else this._selectedProductIds.splice(idx,1);
+            this._updateCouponSelectedLabel();
+        },
+
+        _updateCouponSelectedLabel: function() {
+            const el=document.getElementById('coupon-product-selected-label');
+            if (!el) return;
+            const count=this._selectedProductIds.length;
+            el.textContent=count===0?'No products selected.':`${count} product${count>1?'s':''} selected.`;
         },
 
         handleCouponProductSearch: function() {
-            const keyword=(document.getElementById('coupon-product-search').value||'').trim().toLowerCase();
-            const product=(this.data.products||[]).find(p=>p.name.toLowerCase()===keyword);
-            const select=document.getElementById('coupon-product-id');
-            const filtered=(this.data.products||[]).filter(p=>p.name.toLowerCase().includes(keyword));
-            select.innerHTML='<option value="">Choose product...</option>' + filtered.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-            document.getElementById('coupon-product-id').value=product?product.id:'';
+            const keyword=document.getElementById('coupon-product-search').value||'';
+            this.populateCouponProductOptions(keyword);
         },
 
-        syncCouponProductFromSelect: function() {
-            const selectedId=parseInt(document.getElementById('coupon-product-id').value);
-            const product=(this.data.products||[]).find(p=>p.id===selectedId);
-            document.getElementById('coupon-product-search').value=product?product.name:'';
-
-            document.getElementById('coupon-product-id').value=product?product.id:'';
-
-            const select=document.getElementById('coupon-product-id');
-            if (!select) return;
-            select.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-
-        },
+        syncCouponProductFromSelect: function() {},
 
         toggleCouponScope: function() {
             const scope=document.getElementById('coupon-scope').value;
@@ -3520,11 +3514,11 @@
             const noExpiry=document.getElementById('coupon-no-expiry').checked;
             const expiry=noExpiry?null:document.getElementById('coupon-expiry').value||null;
             const scope=document.getElementById('coupon-scope').value;
-            const productId=scope==='product'?parseInt(document.getElementById('coupon-product-id').value):null;
+            const productIds=scope==='product'?this._selectedProductIds:[];
             if (!code||isNaN(discountPct)||discountPct<=0) { alert('Please fill in Code and Discount Value.'); return; }
             if (discountPct<1||discountPct>100) { alert('Discount must be between 1 and 100%.'); return; }
-            if (scope==='product' && !productId) { alert('Please select a product for this coupon.'); return; }
-            const payload={code, discount_pct:discountPct, max_uses:maxUses, max_uses_per_user:1, expires_at:expiry, applies_to_all: scope!=='product', product_id: productId};
+            if (scope==='product' && productIds.length===0) { alert('Please select at least one product for this coupon.'); return; }
+            const payload={code, discount_pct:discountPct, max_uses:maxUses, max_uses_per_user:1, expires_at:expiry, applies_to_all: scope!=='product', product_ids: productIds, product_id: productIds[0]||null};
             try {
                 const url=this._editingCouponId?`/api/admin/promo-codes/${this._editingCouponId}`:'/api/admin/promo-codes';
                 const method=this._editingCouponId?'PUT':'POST';
