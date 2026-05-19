@@ -1385,12 +1385,12 @@
                         <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Select Product</label>
                         <input id="coupon-product-search" type="text" class="form-input" placeholder="Search product name..." list="coupon-product-options" oninput="app.handleCouponProductSearch()">
                         <datalist id="coupon-product-options"></datalist>
+                        <select id="coupon-product-id" style="margin-top:8px;width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;" onchange="app.syncCouponProductFromSelect()"></select>
 
                         <select id="coupon-product-id" style="margin-top:8px;width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;" onchange="app.syncCouponProductFromSelect()"></select>
 
                         <input id="coupon-product-id" type="hidden" value="">
                         <select id="coupon-product-id" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;"></select>
-
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -3434,6 +3434,7 @@
                 document.getElementById('coupon-value').value=''; document.getElementById('coupon-min-order').value='';
                 document.getElementById('coupon-limit').value=''; document.getElementById('coupon-expiry').value='';
                 document.getElementById('coupon-no-expiry').checked=false; document.getElementById('coupon-expiry').disabled=false;
+                document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
 
                 document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
 
@@ -3475,6 +3476,12 @@
 
         populateCouponProductOptions: function() {
 
+            var optionsEl=document.getElementById('coupon-product-options');
+            var selectEl=document.getElementById('coupon-product-id');
+            if (!optionsEl || !selectEl) return;
+            optionsEl.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
+            selectEl.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+
             const options=document.getElementById('coupon-product-options');
             const select=document.getElementById('coupon-product-id');
             if (!options || !select) return;
@@ -3484,6 +3491,7 @@
             const options=document.getElementById('coupon-product-options');
             if (!options) return;
             options.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
+
         },
 
         handleCouponProductSearch: function() {
@@ -3499,6 +3507,7 @@
             const selectedId=parseInt(document.getElementById('coupon-product-id').value);
             const product=(this.data.products||[]).find(p=>p.id===selectedId);
             document.getElementById('coupon-product-search').value=product?product.name:'';
+
             document.getElementById('coupon-product-id').value=product?product.id:'';
 
             const select=document.getElementById('coupon-product-id');
