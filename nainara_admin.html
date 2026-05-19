@@ -1391,6 +1391,7 @@
 
                         <input id="coupon-product-id" type="hidden" value="">
                         <select id="coupon-product-id" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;"></select>
+
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -1446,11 +1447,11 @@
 
     function getToken() { return sessionStorage.getItem('nainara_token'); }
 
-    async function apiFetch(endpoint, options = {}) {
+    async function apiFetch(endpoint, reqOptions = {}) {
         const token = getToken();
-        const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}), ...(options.headers || {}) };
-        if (options.body instanceof FormData) { delete headers['Content-Type']; }
-        const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+        const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}), ...(reqOptions.headers || {}) };
+        if (reqOptions.body instanceof FormData) { delete headers['Content-Type']; }
+        const res = await fetch(`${API_BASE}${endpoint}`, { ...reqOptions, headers });
         if (res.status === 401) { app.logout(); return null; }
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -3436,6 +3437,7 @@
                 document.getElementById('coupon-no-expiry').checked=false; document.getElementById('coupon-expiry').disabled=false;
                 document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
 
+
                 document.getElementById('coupon-scope').value='all'; document.getElementById('coupon-product-id').value=''; document.getElementById('coupon-product-search').value='';
 
 
@@ -3482,6 +3484,7 @@
             optionsEl.innerHTML=(this.data.products||[]).map(p=>`<option value="${p.name}"></option>`).join('');
             selectEl.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
 
+
             const options=document.getElementById('coupon-product-options');
             const select=document.getElementById('coupon-product-id');
             if (!options || !select) return;
@@ -3513,6 +3516,7 @@
             const select=document.getElementById('coupon-product-id');
             if (!select) return;
             select.innerHTML='<option value="">Choose product...</option>' + (this.data.products||[]).map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+
         },
 
         toggleCouponScope: function() {
