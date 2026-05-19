@@ -71,16 +71,24 @@ const ProductModel = {
   // Helper: get active discount percent for a set of product IDs
   async _getActiveDiscounts(productIds) {
     if (!productIds.length) return {};
+    // Keep discount evaluation in WIB to match admin discount scheduling.
     const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
-    const timeStr = now.toTimeString().slice(0, 8);
+    const wibNow = new Date(now.getTime() + (now.getTimezoneOffset() + 420) * 60000);
+    const dateStr = wibNow.toISOString().split('T')[0];
+    const timeStr = wibNow.toTimeString().slice(0, 8);
     const { rows } = await db.query(
       `SELECT dp.product_id, MAX(d.percentage) AS discount_percent
        FROM discount_products dp
        JOIN discounts d ON d.id = dp.discount_id
        WHERE dp.product_id = ANY($1::int[])
-         AND d.start_date <= $2 AND d.end_date >= $2
-         AND d.start_time <= $3 AND d.end_time >= $3
+         AND (
+           d.start_date < $2
+           OR (d.start_date = $2 AND d.start_time <= $3)
+         )
+         AND (
+           d.end_date > $2
+           OR (d.end_date = $2 AND d.end_time >= $3)
+         )
        GROUP BY dp.product_id`,
       [productIds, dateStr, timeStr]
     );
