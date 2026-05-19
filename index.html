@@ -779,12 +779,12 @@
             .highlight-header span { font-size: 0.7rem !important; margin-bottom: 12px !important; }
 
             /* PRODUCT DETAILS MOBILE FIX */
-            #page-product .container { padding: 0 16px; }
-            .pd-verlane-grid { grid-template-columns: 1fr !important; gap: 15px; margin-top: 10px; width: 100% !important; max-width: 100vw; }
+            #page-product .container { padding: 0 16px; overflow-x: hidden; max-width: 100%; box-sizing: border-box; }
+            .pd-verlane-grid { grid-template-columns: 1fr !important; gap: 15px; margin-top: 10px; width: 100% !important; max-width: 100%; box-sizing: border-box; overflow: hidden; }
             .pd-gallery-wrapper { max-width: calc(100vw - 32px) !important; width: 100% !important; margin-bottom: 10px; }
             .pd-main-stage { width: 100% !important; max-width: 100% !important; aspect-ratio: 1/1; }
             .pd-main-stage img { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
-            .pd-details { padding-top: 5px; width: 100%; }
+            .pd-details { padding-top: 5px; width: 100%; box-sizing: border-box; overflow: hidden; }
             .pd-title-modern { font-size: 1.6rem; margin-bottom: 8px; line-height: 1.25; }
             .pd-price-row { margin-bottom: 20px; flex-wrap: wrap; gap: 8px; }
             .pd-option-group { margin-bottom: 20px; }
