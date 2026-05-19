@@ -3016,18 +3016,7 @@
                         </div>
                     </div>
                     ${recsHTML}
-                    <section style="margin-top:60px;padding-top:40px;border-top:1px solid rgba(0,0,0,0.05);text-align:center;">
-                        <h3 style="font-family:var(--font-heading);font-size:2rem;margin-bottom:16px;">Ulasan Pelanggan</h3>
-                        <div id="pd-inline-rating-${p.id}" style="display:flex;justify-content:center;margin-bottom:24px;"></div>
-                        <button
-                            onclick="app.openReviewModal(${p.id})"
-                            style="padding:12px 32px;border:1px solid var(--text-color);background:transparent;font-family:var(--font-body);font-size:0.85rem;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:4px;transition:all 0.3s ease;"
-                            onmouseover="this.style.background='var(--text-color)';this.style.color='#fff'"
-                            onmouseout="this.style.background='transparent';this.style.color='inherit'"
-                        >
-                            Lihat Semua Ulasan &amp; Beri Review
-                        </button>
-                    </section>
+
                 `;
                 this.loadProductReviews(p.id);
             },
