@@ -4474,16 +4474,20 @@
                                 </button>` : ''}
                             </div>` : ''}
 
-                            ${order.status === 'return_requested' || order.status === 'returned' ? `
+                            ${order.status === 'return_requested' || order.status === 'returned' || order.status === 'rejected' ? `
                             <div class="return-section">
                                 <h3>Return Status</h3>
                                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                                    <span class="return-badge ${order.status === 'returned' ? 'approved' : 'pending'}">
-                                        ${order.status === 'returned' ? 'Return Approved' : 'Return Requested'}
+                                    <span class="return-badge ${order.status === 'returned' ? 'approved' : (order.status === 'rejected' ? 'rejected' : 'pending')}">
+                                        ${order.status === 'returned' ? 'Return Approved' : (order.status === 'rejected' ? 'Return Rejected' : 'Return Requested')}
                                     </span>
                                 </div>
                                 <p style="font-size:0.85rem;color:var(--secondary-text);">
-                                    ${order.status === 'returned' ? 'Your return has been approved. Please follow the instructions sent to your email.' : 'Your return request is being reviewed by our team. We will update you soon.'}
+                                    ${order.status === 'returned'
+                                        ? 'Your return has been approved. Please follow the instructions sent to your email.'
+                                        : (order.status === 'rejected'
+                                            ? 'Your return request was rejected. Please contact support if you need more details.'
+                                            : 'Your return request is being reviewed by our team. We will update you soon.')}
                                 </p>
                             </div>` : ''}
 
@@ -4554,7 +4558,7 @@
             openReturnModal(orderId) {
                 document.getElementById('return-modal-overlay')?.remove();
                 const token = localStorage.getItem("token");
-                fetch(`https://nainaraboutique.com/api/orders/${orderId}`, {
+                fetch(this.apiUrl(`/api/orders/${orderId}`), {
                     headers: { "Authorization": `Bearer ${token}` }
                 })
                 .then(res => res.json())
@@ -4572,12 +4576,12 @@
                     const modalHTML = `
                     <div class="return-modal-overlay" id="return-modal-overlay" onclick="if(event.target===this)this.remove()">
                         <div class="return-modal">
-                            <h2>Request Size Exchange</h2>
-                            <div class="subtitle">Select the item and new size you want</div>
+                            <h2>Request Return / Size Exchange</h2>
+                            <div class="subtitle">Select the item and provide your return details</div>
                             <div class="return-rules">
                                 <strong>Return Policy:</strong><br>
-                                &bull; Only size exchange allowed (same product, same color)<br>
-                                &bull; Cannot change to a different product or color<br>
+                                &bull; Return is currently processed as size exchange only (same product, same color)<br>
+                                &bull; Different product or color changes are not supported<br>
                                 &bull; Unboxing video is <strong>required</strong> as proof<br>
                                 &bull; Must be within 5 days of delivery
                             </div>
@@ -4604,7 +4608,7 @@
                                 <div style="font-size:0.75rem;color:var(--secondary-text);margin-top:4px;">Upload your unboxing video to Google Drive or YouTube, then paste the link here.</div>
                             </div>
                             <div class="return-form-group">
-                                <label for="return-reason">Reason for Exchange</label>
+                                <label for="return-reason">Reason for Return / Exchange</label>
                                 <textarea id="return-reason" placeholder="e.g., Size too small, need one size up..."></textarea>
                             </div>
                             <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
@@ -4632,7 +4636,7 @@
                 btn.textContent = 'Submitting...';
                 try {
                     const token = localStorage.getItem("token");
-                    const res = await fetch('https://nainaraboutique.com/api/returns', {
+                    const res = await fetch(this.apiUrl('/api/returns'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                         body: JSON.stringify({ order_id: orderId, order_item_id: parseInt(itemId), reason: reason, new_size: newSize, video_url: videoUrl })
@@ -5491,6 +5495,14 @@
             authHeaders() {
                 const token = this.getToken();
                 return token ? { 'Authorization': `Bearer ${token}` } : {};
+            },
+
+            /** Resolve API URL from current origin; fallback to production domain. */
+            apiUrl(path) {
+                const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+                const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+                const base = isLocal ? 'https://nainaraboutique.com' : window.location.origin;
+                return `${base}${normalizedPath}`;
             },
 
             openAuthModal(defaultTab = 'login') {
