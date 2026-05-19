@@ -717,8 +717,8 @@
                     </button>
                 </div>
                 <div class="stats-grid">
-                    <div class="card"><div class="stat-header"><span class="stat-title">Total Orders</span><div class="stat-icon icon-blue"><i class="ph ph-shopping-bag"></i></div></div><div class="stat-value" id="dash-total-orders">--</div><div class="stat-trend trend-up"><i class="ph ph-trend-up"></i> +12.5%</div></div>
-                    <div class="card"><div class="stat-header"><span class="stat-title">Total Revenue</span><div class="stat-icon icon-green"><i class="ph ph-currency-dollar"></i></div></div><div class="stat-value" id="dash-total-revenue">--</div><div class="stat-trend trend-up"><i class="ph ph-trend-up"></i> +8.2%</div></div>
+                    <div class="card"><div class="stat-header"><span class="stat-title">Total Orders</span><div class="stat-icon icon-blue"><i class="ph ph-shopping-bag"></i></div></div><div class="stat-value" id="dash-total-orders">--</div><div class="stat-trend trend-up" id="dash-orders-trend"><i class="ph ph-trend-up"></i> +12.5%</div></div>
+                    <div class="card"><div class="stat-header"><span class="stat-title">Total Revenue</span><div class="stat-icon icon-green"><i class="ph ph-currency-dollar"></i></div></div><div class="stat-value" id="dash-total-revenue">--</div><div class="stat-trend trend-up" id="dash-revenue-trend"><i class="ph ph-trend-up"></i> +8.2%</div></div>
                     <div class="card"><div class="stat-header"><span class="stat-title">Active Products</span><div class="stat-icon icon-purple"><i class="ph ph-tag"></i></div></div><div class="stat-value" id="dash-active-products">--</div><div class="stat-trend"><span class="text-muted">In catalog</span></div></div>
                     <div class="card"><div class="stat-header"><span class="stat-title">Low Stock Items</span><div class="stat-icon icon-orange"><i class="ph ph-warning"></i></div></div><div class="stat-value" id="dash-low-stock">--</div><div class="stat-trend trend-down" id="dash-stock-msg"><i class="ph ph-trend-down"></i> Needs attention</div></div>
                 </div>
@@ -1967,6 +1967,38 @@
             document.getElementById('dash-total-revenue').innerText=this.formatPrice(totalRevenue);
             document.getElementById('dash-active-products').innerText=this.data.products.length;
             document.getElementById('dash-low-stock').innerText=this.data.products.filter(p=>p.stock<=this.settings.lowStockThreshold).length;
+
+            // Calculate month-over-month trends
+            const now = new Date();
+            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+            const validOrders = this.data.orders.filter(o => o.status !== 'Cancelled');
+            const thisMonthOrders = validOrders.filter(o => new Date(o.created_at_raw || o.date) >= thisMonthStart);
+            const lastMonthOrders = validOrders.filter(o => { const d = new Date(o.created_at_raw || o.date); return d >= lastMonthStart && d <= lastMonthEnd; });
+
+            const thisMonthRevenue = thisMonthOrders.reduce((s,o) => s + Number(o.total||0), 0);
+            const lastMonthRevenue = lastMonthOrders.reduce((s,o) => s + Number(o.total||0), 0);
+
+            const calcTrend = (current, previous) => {
+                if (previous === 0) return current > 0 ? { pct: 100, up: true } : null;
+                const pct = Math.round(((current - previous) / previous) * 100);
+                return { pct: Math.abs(pct), up: pct >= 0 };
+            };
+
+            const renderTrend = (elId, current, previous) => {
+                const el = document.getElementById(elId);
+                if (!el) return;
+                const trend = calcTrend(current, previous);
+                if (!trend) { el.innerHTML = '<span class="text-muted">No prev. data</span>'; el.className = 'stat-trend'; return; }
+                el.className = `stat-trend ${trend.up ? 'trend-up' : 'trend-down'}`;
+                el.innerHTML = `<i class="ph ph-trend-${trend.up ? 'up' : 'down'}"></i> ${trend.up ? '+' : '-'}${trend.pct}% vs last month`;
+            };
+
+            renderTrend('dash-orders-trend', thisMonthOrders.length, lastMonthOrders.length);
+            renderTrend('dash-revenue-trend', thisMonthRevenue, lastMonthRevenue);
+
             const tbody=document.getElementById('dash-recent-orders-body'); tbody.innerHTML='';
             this.data.orders.slice(0,5).forEach(order => {
                 tbody.innerHTML+=`<tr onclick="app.viewOrderDetail('${order.id}')"><td data-label="Order ID">${order.id}</td><td data-label="Customer">${order.customerName}</td><td data-label="Status">${this.getStatusBadge(order.status)}</td><td data-label="Total">${this.formatPrice(order.total)}</td></tr>`;
