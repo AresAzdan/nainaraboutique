@@ -753,11 +753,11 @@
             .prod-price-old { font-size: 0.78rem; }
             .prod-discount-badge { font-size: 0.75rem; padding: 5px 8px; }
 
-            .pagination { margin-top: 40px; padding-top: 30px; gap: 6px; }
-            .page-link { width: 36px; height: 36px; font-size: 0.9rem; }
+            .pagination { margin-top: 40px; padding-top: 30px; gap: 4px; }
+            .page-link { width: 32px; height: 32px; font-size: 0.82rem; }
             .pagination-row-mobile { display: flex; gap: 4px; justify-content: center; flex-wrap: nowrap; }
             .pagination-row-mobile .page-link { width: 30px; height: 30px; font-size: 0.78rem; }
-            .pagination-row-mobile .page-ellipsis { width: auto; min-width: auto; border: none; padding: 0 2px; }
+            .page-ellipsis { width: 20px !important; min-width: 0 !important; border: none !important; background: none !important; font-size: 0.85rem !important; padding: 0 !important; }
             .recommended-grid { grid-template-columns: repeat(2, 1fr); max-width: 100%; gap: 15px; }
             .recommended-products h3 { font-size: 1.5rem; margin-bottom: 25px; }
 
@@ -2621,31 +2621,22 @@
                     buttonsHtml += `<button class="page-link ${current === i ? 'active' : ''}" onclick="app.changePage(${i})">${i}</button>`;
                 };
 
-                if (isMobile && totalPages > 7) {
-                    const windowSize = 7;
-                    let start = Math.max(1, current - Math.floor(windowSize / 2));
-                    let end = start + windowSize - 1;
+                if (isMobile && totalPages > 5) {
+                    // Mobile: show prev 1 ... [current-1] [current] [current+1] ... last
+                    const showFirst = current > 2;
+                    const showLast = current < totalPages - 1;
+                    const showPrevEllipsis = current > 3;
+                    const showNextEllipsis = current < totalPages - 2;
 
-                    if (end > totalPages) {
-                        end = totalPages;
-                        start = end - windowSize + 1;
-                    }
+                    if (showFirst) renderPageButton(1);
+                    if (showPrevEllipsis) buttonsHtml += `<span class="page-link disabled page-ellipsis">…</span>`;
 
-                    if (start > 1) {
-
-                        buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
-                        buttonsHtml += `<span class="page-link disabled">...</span>`;
-                    }
-
-                    for (let i = start; i <= end; i++) {
+                    for (let i = Math.max(1, current - 1); i <= Math.min(totalPages, current + 1); i++) {
                         renderPageButton(i);
                     }
 
-                    if (end < totalPages) {
-
-                        buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
-                        buttonsHtml += `<span class="page-link disabled">...</span>`;
-                    }
+                    if (showNextEllipsis) buttonsHtml += `<span class="page-link disabled page-ellipsis">…</span>`;
+                    if (showLast) renderPageButton(totalPages);
                 } else {
                     for (let i = 1; i <= totalPages; i++) {
                         renderPageButton(i);
