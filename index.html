@@ -3985,7 +3985,19 @@
                         if (btn) { btn.textContent = 'Apply'; btn.disabled = false; }
                         return;
                     }
-                    const discount = Math.round(subtotal * data.discount_pct / 100);
+                    const eligibleSubtotal = data.applies_to_all
+                        ? subtotal
+                        : (this.data.cart || [])
+                            .filter(i => Number(i.id) === Number(data.product_id))
+                            .reduce((sum, i) => sum + (Number(i.price) * Number(i.qty || 1)), 0);
+                    if (!eligibleSubtotal) {
+                        input.className = 'coupon-input coupon-error';
+                        feedback.textContent = 'This coupon only applies to a specific product in your cart.';
+                        feedback.className = 'coupon-feedback show-err';
+                        if (btn) { btn.textContent = 'Apply'; btn.disabled = false; }
+                        return;
+                    }
+                    const discount = Math.round(eligibleSubtotal * data.discount_pct / 100);
                     const newTotal = Math.max(0, subtotal - discount);
                     this._appliedCoupon = { code, discount, newTotal, promoId: data.id };
                     input.className = 'coupon-input coupon-applied';
