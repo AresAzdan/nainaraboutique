@@ -750,6 +750,9 @@
 
             .pagination { margin-top: 40px; padding-top: 30px; gap: 6px; }
             .page-link { width: 36px; height: 36px; font-size: 0.9rem; }
+            .pagination-row-mobile { display: flex; gap: 4px; justify-content: center; flex-wrap: nowrap; }
+            .pagination-row-mobile .page-link { width: 30px; height: 30px; font-size: 0.78rem; }
+            .pagination-row-mobile .page-ellipsis { width: auto; min-width: auto; border: none; padding: 0 2px; }
             .recommended-grid { grid-template-columns: repeat(2, 1fr); max-width: 100%; gap: 15px; }
             .recommended-products h3 { font-size: 1.5rem; margin-bottom: 25px; }
 
@@ -2624,6 +2627,8 @@
                     }
 
                     if (start > 1) {
+
+                        buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
                         buttonsHtml += `<span class="page-link disabled">...</span>`;
                     }
 
@@ -2632,6 +2637,8 @@
                     }
 
                     if (end < totalPages) {
+
+                        buttonsHtml += `<span class="page-link disabled page-ellipsis">...</span>`;
                         buttonsHtml += `<span class="page-link disabled">...</span>`;
                     }
                 } else {
@@ -2643,6 +2650,9 @@
                 buttonsHtml += `<button class="page-link ${current === totalPages ? 'disabled' : ''}" onclick="${current < totalPages ? `app.changePage(${current + 1})` : ''}"><i class="fa-solid fa-chevron-right page-icon"></i></button>`;
 
                 const infoText = this.t('pageOf').replace('{current}', current).replace('{total}', totalPages);
+
+                const paginationRowClass = isMobile ? 'pagination-row-mobile' : 'pagination-row-desktop';
+                container.innerHTML = `<span style="font-size: 0.9rem; color: var(--secondary-text); font-family: var(--font-body);">${infoText}</span><div class="${paginationRowClass}" style="${!isMobile ? 'display:flex; gap:8px; justify-content:center; flex-wrap:wrap;' : ''}">${buttonsHtml}</div>`;
                 const paginationRowStyle = isMobile
                     ? 'display:flex; gap:6px; justify-content:center; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; white-space:nowrap; width:100%; padding-bottom:2px;'
                     : 'display:flex; gap:8px; justify-content:center; flex-wrap:wrap;';
