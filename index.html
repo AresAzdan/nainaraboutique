@@ -2677,7 +2677,8 @@
                 }
 
                 let buttonsHtml = '';
-                buttonsHtml += `<button class="page-link ${current === 1 ? 'disabled' : ''}" onclick="${current > 1 ? `app.changePage(${current - 1})` : ''}"><i class="fa-solid fa-chevron-left page-icon"></i></button>`;
+                const prevOnclick = current > 1 ? 'app.changePage(' + (current - 1) + ')' : '';
+                buttonsHtml += `<button class="page-link ${current === 1 ? 'disabled' : ''}" onclick="${prevOnclick}"><i class="fa-solid fa-chevron-left page-icon"></i></button>`;
 
                 const renderPageButton = (i) => {
                     buttonsHtml += `<button class="page-link ${current === i ? 'active' : ''}" onclick="app.changePage(${i})">${i}</button>`;
@@ -2705,7 +2706,8 @@
                     }
                 }
 
-                buttonsHtml += `<button class="page-link ${current === totalPages ? 'disabled' : ''}" onclick="${current < totalPages ? `app.changePage(${current + 1})` : ''}"><i class="fa-solid fa-chevron-right page-icon"></i></button>`;
+                const nextOnclick = current < totalPages ? 'app.changePage(' + (current + 1) + ')' : '';
+                buttonsHtml += `<button class="page-link ${current === totalPages ? 'disabled' : ''}" onclick="${nextOnclick}"><i class="fa-solid fa-chevron-right page-icon"></i></button>`;
 
                 const infoText = this.t('pageOf').replace('{current}', current).replace('{total}', totalPages);
 
@@ -5767,9 +5769,11 @@
          * backend API before the rest of the app initialises.
          * ---------------------------------------------------------------- */
 
+        document.addEventListener('DOMContentLoaded', function() {
         const app = window.app;
         if (!app) {
             console.error('App bootstrap failed: window.app is not initialized before dynamic loader');
+            return;
         } else {
         // --- Format price as "Rp 200.000" (Indonesian dot-thousands) ---
         app.formatMoney = function(num) {
@@ -5890,7 +5894,8 @@
                 }).join('');
             }
         };
-        }
+        } // end else
+        }); // end DOMContentLoaded
     </script>
 
     <!-- ═══════════════════════════════════════════════════
