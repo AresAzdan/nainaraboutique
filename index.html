@@ -504,6 +504,23 @@
             box-shadow: 0 2px 8px rgba(224, 85, 85, 0.45);
             pointer-events: none;
         }
+        .prod-restocked-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 2;
+            background-color: #2d7a50;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.8rem;
+            letter-spacing: 0.3px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            line-height: 1;
+            box-shadow: 0 2px 8px rgba(45, 122, 80, 0.45);
+            pointer-events: none;
+            text-transform: uppercase;
+        }
 
         .prod-meta { text-align: left; display: flex; flex-direction: column; flex-grow: 1; }
         .prod-meta-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -2801,6 +2818,9 @@
                     const badgeHTML = discountPct
                         ? `<span class="prod-discount-badge">-${discountPct}%</span>`
                         : '';
+                    const restockedHTML = (!isSoldOut && p.is_back_in_stock)
+                        ? `<span class="prod-restocked-badge">BACK ON STOCK</span>`
+                        : '';
                     const soldOutHTML = isSoldOut ? `<span class="sold-out-overlay">Sold Out</span>` : '';
 
                     const priceHTML = `
@@ -2814,6 +2834,7 @@
                         <div class="prod-img-box">
                             <img src="${p.images?.[0]}" loading="lazy" alt="${p.name || 'Product image'}">
                             ${badgeHTML}
+                            ${restockedHTML}
                             ${soldOutHTML}
                         </div>
                         <div class="prod-meta">
@@ -2853,6 +2874,8 @@
                         total_sold: item.total_sold || 0,
                         is_new: item.is_new || false,
                         is_hot: item.is_hot || false,
+                        is_back_in_stock: item.is_back_in_stock || false,
+                        last_restocked_at: item.last_restocked_at || null,
                         average_rating: parseFloat(item.average_rating) || 0,
                         total_reviews: parseInt(item.total_reviews) || 0,
                         size_guide_id: item.size_guide_id || null,
