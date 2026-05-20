@@ -2539,6 +2539,14 @@
                 else if (route === 'forgot-password') { /* static page, just show */ }
                 else if (route === 'reset-password') { /* static page with token param */ }
                 else if (route === 'about' || route === 'privacy' || route === 'terms') { /* static pages */ }
+                else if (route === 'landing' || route === '') {
+                    // Re-apply homepage data (hero image, highlights, etc.) after the
+                    // landing page element is visible. requestAnimationFrame ensures the
+                    // element is already in the DOM before we set background-image.
+                    if (this._homepageData) {
+                        requestAnimationFrame(() => this.applyHomepageData(this._homepageData));
+                    }
+                }
 
                 
                 setTimeout(() => {
@@ -5759,7 +5767,7 @@
 
         window.app = app;
 
-        document.addEventListener('DOMContentLoaded', () => { app.init(); app.initReviewModal(); });
+        document.addEventListener('DOMContentLoaded', () => { app.initReviewModal(); });
     </script>
 
     <script>
@@ -5785,10 +5793,9 @@
         const _originalInit = app.init.bind(app);
         app.init = async function () {
             this.data.products = [];
-            const apiBase = window.location.origin;
             try {
                 const PLACEHOLDER = 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
-                const response = await fetch(apiBase + "/api/products");
+                const response = await fetch("https://nainaraboutique.com/api/products");
                 if (response.ok) {
                     const json = await response.json();
                     const apiProducts = Array.isArray(json.data) ? json.data : [];
@@ -5826,7 +5833,7 @@
 
             // Load homepage settings from API
             try {
-                const hpRes = await fetch(apiBase + "/api/homepage");
+                const hpRes = await fetch("https://nainaraboutique.com/api/homepage");
                 if (hpRes.ok) {
                     const hpData = await hpRes.json();
                     this._homepageData = hpData;
@@ -5896,6 +5903,10 @@
             }
         };
         } // end else
+        // Call init() here — AFTER all patches (formatMoney, init, applyHomepageData)
+        // are fully set up. Calling it from the first DOMContentLoaded listener is
+        // unreliable because browser does not guarantee order between two listeners.
+        if (app && app.init) app.init();
         }); // end DOMContentLoaded
     </script>
 
