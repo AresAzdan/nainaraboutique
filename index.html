@@ -3917,9 +3917,6 @@
                 });
             },
 
-            navigateTo(route) {
-                window.location.hash = `#${route}`;
-            },
             async loadProvinces() {
                 const select = document.getElementById('province');
                 if (!select || select.options.length > 1) return; // already loaded
