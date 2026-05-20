@@ -465,10 +465,27 @@
         
         .prod-card-e { display: flex; flex-direction: column; cursor: pointer; background-color: transparent; border-radius: 0; padding: 0; transition: var(--transition); height: 100%; }
         @media (hover: hover) { .prod-card-e:hover { transform: translateY(-5px); } }
+        .prod-card-e.sold-out { opacity: 0.75; }
 
         .prod-img-box { position: relative; padding-bottom: 130%; background: #f0f0f0; overflow: hidden; margin-bottom: 16px; border-radius: 12px; }
         .prod-img-box img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s ease; }
         @media (hover: hover) { .prod-card-e:hover .prod-img-box img { transform: scale(1.05); will-change: transform; } }
+        .prod-card-e.sold-out .prod-img-box img { filter: grayscale(100%); }
+        .sold-out-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(33, 33, 33, 0.3);
+            color: #fff;
+            font-size: 0.8rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+            pointer-events: none;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+        }
 
         /* Discount badge — overlay top-right corner of image */
         .prod-discount-badge {
@@ -2780,9 +2797,11 @@
                         if (!isNaN(parsed) && parsed > 0) discountPct = parsed;
                     }
 
+                    const isSoldOut = Number(p.stock) <= 0;
                     const badgeHTML = discountPct
                         ? `<span class="prod-discount-badge">-${discountPct}%</span>`
                         : '';
+                    const soldOutHTML = isSoldOut ? `<span class="sold-out-overlay">Sold Out</span>` : '';
 
                     const priceHTML = `
                         <div class="prod-price-row">
@@ -2791,10 +2810,11 @@
                         </div>`;
 
                     return `
-                    <div class="prod-card-e" onclick="app.navigateTo('product?id=${p.id}')">
+                    <div class="prod-card-e${isSoldOut ? ' sold-out' : ''}" onclick="app.navigateTo('product?id=${p.id}')">
                         <div class="prod-img-box">
                             <img src="${p.images?.[0]}" loading="lazy" alt="${p.name || 'Product image'}">
                             ${badgeHTML}
+                            ${soldOutHTML}
                         </div>
                         <div class="prod-meta">
                             <div class="prod-meta-header">
@@ -2942,11 +2962,13 @@
                                         const pd = parseInt(String(r.discount).replace(/[^0-9]/g, ''), 10);
                                         if (!isNaN(pd) && pd > 0) rDiscPct = pd;
                                     }
+                                    const rSoldOut = Number(r.stock) <= 0;
                                     return `
-                                    <div class="prod-card-e" onclick="app.navigateTo('product?id=${r.id}')">
+                                    <div class="prod-card-e${rSoldOut ? ' sold-out' : ''}" onclick="app.navigateTo('product?id=${r.id}')">
                                         <div class="prod-img-box">
                                             <img src="${r.images[0]}" loading="lazy" alt="${r.name || 'Product image'}">
                                             ${rDiscPct ? `<span class="prod-discount-badge">-${rDiscPct}%</span>` : ''}
+                                            ${rSoldOut ? `<span class="sold-out-overlay">Sold Out</span>` : ''}
                                         </div>
                                         <div class="prod-meta">
                                             <div class="prod-meta-header">
