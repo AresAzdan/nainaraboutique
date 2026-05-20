@@ -2819,6 +2819,8 @@
                         ? `<span class="prod-discount-badge">-${discountPct}%</span>`
                         : '';
                     const restockedHTML = (!isSoldOut && p.is_back_in_stock)
+
+                        ? `<span class="prod-restocked-badge">BACK IN STOCK</span>`
                         ? `<span class="prod-restocked-badge">BACK ON STOCK</span>`
                         : '';
                     const soldOutHTML = isSoldOut ? `<span class="sold-out-overlay">Sold Out</span>` : '';
