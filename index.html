@@ -517,7 +517,7 @@
         .highlight-price { font-weight: 600; font-size: 0.95rem; }
 
         /* --- RECOMMENDED SECTION --- */
-        .recommended-products { margin-top: 80px; padding-top: 40px; border-top: 1px solid rgba(0,0,0,0.05); }
+        .recommended-products { margin-top: 80px; margin-bottom: 80px; padding-top: 40px; padding-bottom: 60px; border-top: 1px solid rgba(0,0,0,0.05); }
         .recommended-products h3 { font-family: var(--font-heading); font-size: 2rem; text-align: center; margin-bottom: 40px; color: var(--text-color); }
         .recommended-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 25px; }
 
@@ -2873,12 +2873,6 @@
                 // Normalise: if a value looks like a hex/rgb keep it, otherwise treat as CSS name
                 const colors = rawColors.length > 0 ? rawColors : [];
 
-                // Complete the Look — use same-category products, fallback to any products
-                const upsells = (() => {
-                    const sameCat = this.data.products.filter(x => x.category === p.category && x.id !== p.id).slice(0, 3);
-                    if (sameCat.length >= 2) return sameCat;
-                    return this.data.products.filter(x => x.id !== p.id).slice(0, 3);
-                })();
                 
                 const recs = this.getRecommendedProducts(p);
                 let recsHTML = '';
@@ -2999,18 +2993,7 @@
                                 <p>${p.description || "A masterclass in tailored minimalism. This piece features a relaxed point collar, storm flaps, and adjustable details. It is crafted from premium materials ensuring longevity and style."}</p>
                             </div>
 
-                            <div class="complete-look">
-                                <div class="cl-title">${this.t('completeLook')}</div>
-                                <div class="cl-grid">
-                                    ${upsells.map(u => `
-                                        <div class="cl-item" onclick="app.navigateTo('product?id=${u.id}')">
-                                            <img src="${u.images[0]}" class="cl-img" alt="${u.name || 'Product image'}">
-                                            <div class="cl-name">${u.name}</div>
-                                            <div class="cl-price">${this.formatMoney(u.price)}</div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
+
                         </div>
                     </div>
                     ${recsHTML}
