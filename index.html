@@ -2816,6 +2816,7 @@
                         size_guide_id: item.size_guide_id || null,
                         size_guide_data: item.size_guide_data || null,
                         size_guide: item.size_guide || null,
+                        recommended_product_ids: item.recommended_product_ids || item.recommended_ids || item.related_product_ids || item.related_products || null,
                     }));
                     this.renderShop();
                 } catch (err) {
@@ -2845,13 +2846,43 @@
             
             getRecommendedProducts(currentProduct) {
                 const all = this.data.products;
+                const normalizeToIdArray = (value) => {
+                    if (!value) return [];
+                    if (Array.isArray(value)) {
+                        return value.map(v => parseInt(v, 10)).filter(n => Number.isInteger(n));
+                    }
+                    if (typeof value === 'string') {
+                        return value
+                            .split(',')
+                            .map(v => parseInt(v.trim(), 10))
+                            .filter(n => Number.isInteger(n));
+                    }
+                    return [];
+                };
+
+                const explicitIds = normalizeToIdArray(currentProduct.recommended_product_ids);
+                const explicitProducts = explicitIds
+                    .map(id => all.find(p => p.id === id))
+                    .filter(p => p && p.id !== currentProduct.id);
+
                 const sameCat = all.filter(p => p.category === currentProduct.category && p.id !== currentProduct.id);
                 sameCat.sort((a, b) => (b.total_sold || 0) - (a.total_sold || 0));
                 const bestSellers = all.filter(p => p.id !== currentProduct.id).sort((a, b) => (b.total_sold || 0) - (a.total_sold || 0));
+
                 const combined = [];
                 const addedIds = new Set();
-                for (const p of sameCat) { if (combined.length >= 4) break; combined.push(p); addedIds.add(p.id); }
-                for (const p of bestSellers) { if (combined.length >= 4) break; if (!addedIds.has(p.id)) { combined.push(p); addedIds.add(p.id); } }
+                for (const p of explicitProducts) {
+                    if (combined.length >= 4) break;
+                    if (!addedIds.has(p.id)) { combined.push(p); addedIds.add(p.id); }
+                }
+                for (const p of sameCat) {
+                    if (combined.length >= 4) break;
+                    if (!addedIds.has(p.id)) { combined.push(p); addedIds.add(p.id); }
+                }
+                for (const p of bestSellers) {
+                    if (combined.length >= 4) break;
+                    if (!addedIds.has(p.id)) { combined.push(p); addedIds.add(p.id); }
+                }
                 return combined;
             },
 
@@ -5706,6 +5737,7 @@
                         size_guide_id: item.size_guide_id || null,
                         size_guide_data: item.size_guide_data || null,
                         size_guide: item.size_guide || null,
+                        recommended_product_ids: item.recommended_product_ids || item.recommended_ids || item.related_product_ids || item.related_products || null,
 
                         images: Array.isArray(item.images) && item.images.length > 0
                             ? item.images.filter(Boolean)
