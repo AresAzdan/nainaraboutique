@@ -147,7 +147,10 @@ const ProductModel = {
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN size_guides sg ON sg.id = p.size_guide_id
        ${where}
-       ORDER BY p.created_at DESC
+       ORDER BY
+         CASE WHEN p.stock <= 0 THEN 1 ELSE 0 END ASC,
+         p.created_at DESC,
+         p.id DESC
        ${pagination}`,
       values
     );
