@@ -2888,6 +2888,7 @@
             
             getRecommendedProducts(currentProduct) {
                 const all = this.data.products;
+                const isInStock = (product) => Number(product?.stock) > 0;
                 const normalizeToIdArray = (value) => {
                     if (!value) return [];
                     if (Array.isArray(value)) {
@@ -2905,11 +2906,13 @@
                 const explicitIds = normalizeToIdArray(currentProduct.recommended_product_ids);
                 const explicitProducts = explicitIds
                     .map(id => all.find(p => p.id === id))
-                    .filter(p => p && p.id !== currentProduct.id);
+                    .filter(p => p && p.id !== currentProduct.id && isInStock(p));
 
-                const sameCat = all.filter(p => p.category === currentProduct.category && p.id !== currentProduct.id);
+                const sameCat = all.filter(p => p.category === currentProduct.category && p.id !== currentProduct.id && isInStock(p));
                 sameCat.sort((a, b) => (b.total_sold || 0) - (a.total_sold || 0));
-                const bestSellers = all.filter(p => p.id !== currentProduct.id).sort((a, b) => (b.total_sold || 0) - (a.total_sold || 0));
+                const bestSellers = all
+                    .filter(p => p.id !== currentProduct.id && isInStock(p))
+                    .sort((a, b) => (b.total_sold || 0) - (a.total_sold || 0));
 
                 const combined = [];
                 const addedIds = new Set();
