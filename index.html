@@ -2819,9 +2819,7 @@
                         ? `<span class="prod-discount-badge">-${discountPct}%</span>`
                         : '';
                     const restockedHTML = (!isSoldOut && p.is_back_in_stock)
-
                         ? `<span class="prod-restocked-badge">BACK IN STOCK</span>`
-                        ? `<span class="prod-restocked-badge">BACK ON STOCK</span>`
                         : '';
                     const soldOutHTML = isSoldOut ? `<span class="sold-out-overlay">Sold Out</span>` : '';
 
@@ -5769,6 +5767,10 @@
          * backend API before the rest of the app initialises.
          * ---------------------------------------------------------------- */
 
+        const app = window.app;
+        if (!app) {
+            console.error('App bootstrap failed: window.app is not initialized before dynamic loader');
+        } else {
         // --- Format price as "Rp 200.000" (Indonesian dot-thousands) ---
         app.formatMoney = function(num) {
             const numInt = Math.round(parseFloat(num));
@@ -5888,6 +5890,7 @@
                 }).join('');
             }
         };
+        }
     </script>
 
     <!-- ═══════════════════════════════════════════════════
