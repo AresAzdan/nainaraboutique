@@ -147,7 +147,11 @@ const ProductModel = {
        LEFT JOIN categories c ON p.category_id = c.id
        LEFT JOIN size_guides sg ON sg.id = p.size_guide_id
        ${where}
-       ORDER BY p.created_at DESC
+       ORDER BY
+         CASE WHEN p.stock <= 0 THEN 1 ELSE 0 END ASC,
+         p.last_restocked_at DESC NULLS LAST,
+         p.created_at DESC,
+         p.id DESC
        ${pagination}`,
       values
     );
@@ -182,6 +186,8 @@ const ProductModel = {
         price:            finalPrice,
         is_new:           isNew,
         is_hot:           isHot,
+        is_back_in_stock: Number(row.stock) > 0 && !!row.last_restocked_at,
+        last_restocked_at: row.last_restocked_at || null,
         size_guide_id:    row.size_guide_id || null,
         size_guide_data:  row.size_guide_data || null,
         size_guide:       this._buildSizeGuide(row),
@@ -222,6 +228,8 @@ const ProductModel = {
       discount_percent: discountPercent,
       original_price:   originalPrice,
       price:            finalPrice,
+      is_back_in_stock: Number(rows[0].stock) > 0 && !!rows[0].last_restocked_at,
+      last_restocked_at: rows[0].last_restocked_at || null,
       size_guide_id:    rows[0].size_guide_id || null,
       size_guide_data:  rows[0].size_guide_data || null,
       size_guide:       this._buildSizeGuide(rows[0]),
@@ -292,8 +300,22 @@ const ProductModel = {
     let product;
     if (updates.length > 0) {
       values.push(id);
+      const stockIndex = updates.findIndex((u) => u.startsWith('stock = $'));
+      let setClause = updates.join(', ');
+      if (stockIndex !== -1) {
+        const stockRef = updates[stockIndex].match(/\$\d+/)?.[0];
+        if (stockRef) {
+          setClause += `,
+            last_restocked_at = CASE
+              WHEN stock <= 0 AND ${stockRef}::int > 0 THEN NOW()
+              WHEN ${stockRef}::int <= 0 THEN NULL
+              ELSE last_restocked_at
+            END`;
+        }
+      }
+
       const { rows } = await db.query(
-        `UPDATE products SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING *`,
+        `UPDATE products SET ${setClause} WHERE id = $${values.length} RETURNING *`,
         values
       );
       product = rows[0] || null;
