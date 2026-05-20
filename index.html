@@ -2161,7 +2161,10 @@
                     }
                 });
 
-                window.addEventListener('hashchange', () => this.handleRoute());
+                window.addEventListener('hashchange', () => {
+                    if (!this._initComplete) this._hashchangeFiredDuringInit = true;
+                    this.handleRoute();
+                });
                 window.addEventListener('load', () => this.handleRoute());
                 
                 document.addEventListener('click', (e) => {
@@ -5784,11 +5787,16 @@
                 this.applyHomepageData(this._homepageData);
             }
 
-            // If a user clicks a CTA/nav item while the initial API requests are
-            // still running, the hash may change before the hashchange listener is
-            // registered. Handle the current route once init is complete so first
-            // load navigation always lands on the intended page.
-            this.handleRoute();
+            // Listeners registered in _originalInit() handle routing for hashchange/load.
+            // We add one extra handleRoute() call here in case the page finished loading
+            // with a hash already set (race between DOMContentLoaded and the async fetch).
+            // But: if a hashchange already fired WHILE this fetch was running (e.g. the
+            // user swiped back), we must NOT call handleRoute() again or it will override
+            // the page the user navigated to.
+            this._initComplete = true;
+            if (!this._hashchangeFiredDuringInit) {
+                this.handleRoute();
+            }
         };
 
         app.applyHomepageData = function(hp) {
