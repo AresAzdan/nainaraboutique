@@ -73,6 +73,7 @@ CREATE TABLE products (
   category_id INTEGER        REFERENCES categories(id) ON DELETE SET NULL,
   size_guide_id INTEGER,
   size_guide_data JSONB,
+  last_restocked_at TIMESTAMPTZ,
   created_at  TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
