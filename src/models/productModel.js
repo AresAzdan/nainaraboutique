@@ -149,6 +149,7 @@ const ProductModel = {
        ${where}
        ORDER BY
          CASE WHEN p.stock <= 0 THEN 1 ELSE 0 END ASC,
+
          p.last_restocked_at DESC NULLS LAST,
          p.created_at DESC,
          p.id DESC
