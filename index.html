@@ -2388,19 +2388,19 @@
                 this.data.scrollPositions[currentHash] = window.scrollY;
                 this.data.isExplicitNav = true;
 
-                // If navigating away from shop, encode current page into the shop hash
-                // so browser back/forward restores the correct page.
+                // If navigating away from shop to another page, encode the current page
+                // number into the history entry so swipe-back / browser back restores it.
                 const [currentRoute] = currentHash.split('?');
-                if (currentRoute === 'shop' && this.data.currentPage > 1) {
-                    // Replace the shop history entry with page info so back button works
+                const [targetRoute] = path.split('?');
+                if (currentRoute === 'shop' && targetRoute !== 'shop' && this.data.currentPage > 1) {
                     const shopHashWithPage = `shop?page=${this.data.currentPage}`;
-                    history.replaceState(null, '', `#${shopHashWithPage}`);
+                    // Push a new history entry (not replace) with the page info
+                    history.pushState(null, '', `#${shopHashWithPage}`);
                     this.data.scrollPositions[shopHashWithPage] = window.scrollY;
                 }
 
                 const newHash = `#${path}`;
                 if (window.location.hash === newHash) {
-                    // Hash won't change, so hashchange won't fire — call handleRoute directly
                     this.handleRoute(path);
                 } else {
                     try { window.location.hash = path; } catch (e) { this.handleRoute(path); }
