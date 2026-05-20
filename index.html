@@ -2387,6 +2387,17 @@
                 const currentHash = window.location.hash.slice(1) || 'landing';
                 this.data.scrollPositions[currentHash] = window.scrollY;
                 this.data.isExplicitNav = true;
+
+                // If navigating away from shop, encode current page into the shop hash
+                // so browser back/forward restores the correct page.
+                const [currentRoute] = currentHash.split('?');
+                if (currentRoute === 'shop' && this.data.currentPage > 1) {
+                    // Replace the shop history entry with page info so back button works
+                    const shopHashWithPage = `shop?page=${this.data.currentPage}`;
+                    history.replaceState(null, '', `#${shopHashWithPage}`);
+                    this.data.scrollPositions[shopHashWithPage] = window.scrollY;
+                }
+
                 const newHash = `#${path}`;
                 if (window.location.hash === newHash) {
                     // Hash won't change, so hashchange won't fire — call handleRoute directly
@@ -2448,6 +2459,7 @@
                 if(route === 'shop') {
                     const filterType = params.get('filter');
                     const category = params.get('cat');
+                    const pageParam = params.get('page');
                     
                     if (filterType || category) {
                         this.resetFilters(false);
@@ -2456,6 +2468,12 @@
                         else if(filterType === 'new') this.data.filters.type = 'new';
                         else if(filterType === 'hot') this.data.filters.type = 'hot'; 
                         else if(category) this.data.filters.categories = [category.charAt(0).toUpperCase() + category.slice(1)];
+                    } else if (pageParam) {
+                        // Restoring from browser back/forward — recover saved page number
+                        const restoredPage = parseInt(pageParam, 10);
+                        if (!isNaN(restoredPage) && restoredPage > 0) {
+                            this.data.currentPage = restoredPage;
+                        }
                     }
                     this.renderCategoryFilters();
                     this.renderShop();
