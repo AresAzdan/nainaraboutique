@@ -2603,9 +2603,11 @@
             const input = document.getElementById('p-color-input');
             const picker = document.getElementById('p-color-picker');
             const preview = document.getElementById('color-picker-preview');
-            const hex = this._normalizeHexColor(value);
-            const displayValue = hex || String(value || '').trim();
-            const previewColor = this._canPreviewColor(displayValue) ? displayValue : this._defaultPickerColor;
+            const parsed = this._parseColorToken(value);
+            const rawColor = parsed.color || String(value || '').trim();
+            const hex = this._normalizeHexColor(rawColor);
+            const displayValue = hex || rawColor;
+            const previewColor = this._canPreviewColor(rawColor) ? rawColor : this._defaultPickerColor;
             if (input && document.activeElement !== input) input.value = displayValue || this._defaultPickerColor;
             if (picker) picker.value = hex || this._defaultPickerColor;
             if (preview) {
