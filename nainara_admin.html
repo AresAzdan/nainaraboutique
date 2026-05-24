@@ -1146,7 +1146,9 @@
                             <input type="text" id="p-color-input" class="form-input"
                                 placeholder="#C49A6C or color name"
                                 oninput="app.handleColorTextInput(this.value)" onkeydown="app.handleColorKey(event)">
-
+                        </div>
+                        <div style="margin-top:10px;">
+                            <input type="text" id="p-color-name-input" class="form-input" placeholder="Custom color name for swatch (optional), e.g. Rose Gold">
                         </div>
                         <div class="color-action-row">
                             <button type="button" class="btn-secondary color-tool-button" onclick="app.addColorChip()">+ Add Color</button>
@@ -2525,8 +2527,27 @@
             return '';
         },
 
-        _canPreviewColor: function(value) {
+        _parseColorToken: function(value) {
             const raw = String(value || '').trim();
+            if (!raw) return { name: '', color: '' };
+            const sep = raw.indexOf('::');
+            if (sep === -1) return { name: '', color: raw };
+            return {
+                name: raw.slice(0, sep).trim(),
+                color: raw.slice(sep + 2).trim()
+            };
+        },
+
+        _buildColorToken: function(name, color) {
+            const safeName = String(name || '').trim();
+            const safeColor = String(color || '').trim();
+            if (!safeColor) return '';
+            return safeName ? `${safeName}::${safeColor}` : safeColor;
+        },
+
+        _canPreviewColor: function(value) {
+            const parsed = this._parseColorToken(value);
+            const raw = parsed.color || String(value || '').trim();
             return !!raw && (!window.CSS || !CSS.supports || CSS.supports('color', raw));
         },
 
@@ -2537,12 +2558,15 @@
 
 
         _displayColorName: function(value, index) {
-            const color = String(value || '').trim();
+            const parsed = this._parseColorToken(value);
+            if (parsed.name) return parsed.name;
+            const color = parsed.color || String(value || '').trim();
             return this._normalizeHexColor(color) ? 'Color ' + (index + 1) : color;
         },
 
         _renderColorLabel: function(value, index, dotSize = 10) {
-            const color = String(value || '').trim();
+            const parsed = this._parseColorToken(value);
+            const color = parsed.color || String(value || '').trim();
             const bg = this._canPreviewColor(color) ? color : '#f3f4f6';
             return '<span style="display:inline-flex;align-items:center;gap:5px;">'
                 + '<span style="width:' + dotSize + 'px;height:' + dotSize + 'px;border-radius:50%;background:' + this.escapeHtml(bg) + ';border:1px solid rgba(0,0,0,0.2);display:inline-block;flex-shrink:0;"></span>'
@@ -2555,7 +2579,9 @@
             if (!colors.length) return '-';
             return '<span style="display:inline-flex;gap:4px;align-items:center;justify-content:flex-end;">'
                 + colors.slice(0, 5).map((color, i) => {
-                    const bg = this._canPreviewColor(color) ? color : '#f3f4f6';
+                    const parsed = this._parseColorToken(color);
+                    const rawColor = parsed.color || color;
+                    const bg = this._canPreviewColor(rawColor) ? rawColor : '#f3f4f6';
                     return '<span aria-label="' + this.escapeHtml(this._displayColorName(color, i)) + '" style="width:13px;height:13px;border-radius:50%;background:' + this.escapeHtml(bg) + ';border:1px solid rgba(0,0,0,0.18);display:inline-block;"></span>';
                 }).join('')
                 + (colors.length > 5 ? '<span style="font-size:11px;color:var(--text-muted);">+' + (colors.length - 5) + '</span>' : '')
@@ -2577,9 +2603,11 @@
             const input = document.getElementById('p-color-input');
             const picker = document.getElementById('p-color-picker');
             const preview = document.getElementById('color-picker-preview');
-            const hex = this._normalizeHexColor(value);
-            const displayValue = hex || String(value || '').trim();
-            const previewColor = this._canPreviewColor(displayValue) ? displayValue : this._defaultPickerColor;
+            const parsed = this._parseColorToken(value);
+            const rawColor = parsed.color || String(value || '').trim();
+            const hex = this._normalizeHexColor(rawColor);
+            const displayValue = hex || rawColor;
+            const previewColor = this._canPreviewColor(rawColor) ? rawColor : this._defaultPickerColor;
             if (input && document.activeElement !== input) input.value = displayValue || this._defaultPickerColor;
             if (picker) picker.value = hex || this._defaultPickerColor;
             if (preview) {
@@ -2603,7 +2631,9 @@
 
                 const label = this.escapeHtml(this._displayColorName(c, i));
 
-                const bg = this._canPreviewColor(c) ? c : '#f3f4f6';
+                const parsed = this._parseColorToken(c);
+                const rawColor = parsed.color || c;
+                const bg = this._canPreviewColor(rawColor) ? rawColor : '#f3f4f6';
                 return '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:500;">'
                     + '<span class="color-chip-preview" style="background:' + this.escapeHtml(bg) + ';"></span>'
                     + label
@@ -2663,12 +2693,20 @@
 
         addColorFromSwatch: function(color) {
             const val = this._formatColorValue(color);
-            if (!this._colorList.some(c => c.toLowerCase() === val.toLowerCase())) {
-                this._colorList.push(val);
+            const nameInput = document.getElementById('p-color-name-input');
+            const customName = nameInput ? String(nameInput.value || '').trim() : '';
+            const token = this._buildColorToken(customName, val);
+            const exists = this._colorList.some(c => {
+                const parsed = this._parseColorToken(c);
+                return (parsed.color || c).toLowerCase() === val.toLowerCase();
+            });
+            if (!exists) {
+                this._colorList.push(token);
                 this.renderColorChips();
                 if (this._sizeMode === 'multi') this.renderSizeRows();
             }
             this._setColorPickerValue(val);
+            if (nameInput) nameInput.value = '';
         },
 
         removeColorChip: function(index) {
