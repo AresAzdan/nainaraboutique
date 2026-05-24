@@ -2674,17 +2674,23 @@
             const picker = document.getElementById('p-color-picker');
 
             const input = document.getElementById('p-color-input');
+            const nameInput = document.getElementById('p-color-name-input');
             if (!input) return;
             const val = this._formatColorValue(input.value || document.getElementById('p-color-picker')?.value || this._defaultPickerColor);
-
-            const exists = this._colorList.some(c => c.toLowerCase() === val.toLowerCase());
+            const customName = nameInput ? String(nameInput.value || '').trim() : '';
+            const token = this._buildColorToken(customName, val);
+            const exists = this._colorList.some(c => {
+                const parsed = this._parseColorToken(c);
+                return (parsed.color || c).toLowerCase() === val.toLowerCase();
+            });
             if (val && !exists) {
-                this._colorList.push(val);
+                this._colorList.push(token);
                 this.renderColorChips();
                 if (this._sizeMode === 'multi') this.renderSizeRows();
             }
             this._setColorPickerValue(val || this._defaultPickerColor);
 
+            if (nameInput) nameInput.value = '';
 
             input.focus();
             input.select();
