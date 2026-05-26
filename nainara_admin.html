@@ -2407,9 +2407,15 @@
                 app.initSizeGuideForm(prod);
             } else {
                 title.innerText='Add New Product'; btnSave.innerText='Save Product';
+                // Reset penuh semua state sebelum isi form baru
+                this._colorList = [];
+                this._sizeStocks = {};
+                this._sizeMode = 'all';
                 document.getElementById('product-form').reset(); document.getElementById('p-id').value='';
                 app.currentImages=[]; app._pendingFiles=[]; app._pendingPreviews=[]; app.renderImageGrid(); app.initColorInput('');
                 const fileInput=document.getElementById('p-image-input'); if (fileInput) fileInput.value='';
+                // Bersihkan sz-rows agar tidak ada sisa dari produk sebelumnya
+                const szRows = document.getElementById('sz-rows'); if (szRows) szRows.innerHTML = '';
                 app.initSizeStocks([], {}, 0);
                 app.initSizeGuideForm(null);
             }
@@ -3041,6 +3047,13 @@
         closeModal: function() {
             document.querySelectorAll('.editing-row').forEach(el=>el.classList.remove('editing-row'));
             document.getElementById('product-modal').classList.add('hidden');
+            // Reset semua state produk agar tidak bocor ke sesi berikutnya
+            this._colorList = [];
+            this._sizeStocks = {};
+            this._sizeMode = 'all';
+            this._pendingFiles = [];
+            this._pendingPreviews = [];
+            this.currentImages = [];
         },
 
         handleProductSubmit: function(e) {
