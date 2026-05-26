@@ -2589,17 +2589,6 @@
         },
 
         _setColorPickerValue: function(value) {
-            const picker = document.getElementById('p-color-picker');
-            const preview = document.getElementById('color-picker-preview');
-            const hex = this._normalizeHexColor(value) || this._defaultPickerColor;
-            if (picker) picker.value = hex;
-            if (preview) {
-                preview.innerHTML = '<span class="color-chip-preview" style="background:' + this.escapeHtml(hex) + ';"></span>Selected color';
-            }
-        },
-
-
-        _setColorPickerValue: function(value) {
             const input = document.getElementById('p-color-input');
             const picker = document.getElementById('p-color-picker');
             const preview = document.getElementById('color-picker-preview');
@@ -2662,26 +2651,23 @@
             const picker = document.getElementById('p-color-picker');
             if (hex && picker) picker.value = hex;
             this._setColorPickerValue(value);
-
-        },
-
-        handleColorPickerChange: function(value) {
-            this._setColorPickerValue(value);
         },
 
         addColorChip: function() {
 
-            const picker = document.getElementById('p-color-picker');
-
             const input = document.getElementById('p-color-input');
             const nameInput = document.getElementById('p-color-name-input');
             if (!input) return;
-            const val = this._formatColorValue(input.value || document.getElementById('p-color-picker')?.value || this._defaultPickerColor);
+            const rawInput = String(input.value || '').trim();
+            if (!rawInput) return;
+            const val = this._formatColorValue(rawInput);
             const customName = nameInput ? String(nameInput.value || '').trim() : '';
             const token = this._buildColorToken(customName, val);
             const exists = this._colorList.some(c => {
                 const parsed = this._parseColorToken(c);
-                return (parsed.color || c).toLowerCase() === val.toLowerCase();
+                const cColor = (parsed.color || c).toLowerCase();
+                const cName = parsed.name ? parsed.name.toLowerCase() : '';
+                return cColor === val.toLowerCase() || (customName && cName === customName.toLowerCase()) || cColor === rawInput.toLowerCase();
             });
             if (val && !exists) {
                 this._colorList.push(token);
@@ -2692,8 +2678,8 @@
 
             if (nameInput) nameInput.value = '';
 
+            input.value = '';
             input.focus();
-            input.select();
 
         },
 
