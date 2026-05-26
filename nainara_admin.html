@@ -2562,7 +2562,8 @@
             const parsed = this._parseColorToken(value);
             if (parsed.name) return parsed.name;
             const color = parsed.color || String(value || '').trim();
-            return this._normalizeHexColor(color) ? 'Color ' + (index + 1) : color;
+            // Tampilkan hex apa adanya, bukan "Color N" — supaya admin bisa membedakan
+            return color || ('Color ' + (index + 1));
         },
 
         _renderColorLabel: function(value, index, dotSize = 10) {
