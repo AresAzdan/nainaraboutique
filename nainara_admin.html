@@ -2562,8 +2562,8 @@
             const parsed = this._parseColorToken(value);
             if (parsed.name) return parsed.name;
             const color = parsed.color || String(value || '').trim();
-            // Tampilkan hex apa adanya, bukan "Color N" — supaya admin bisa membedakan
-            return color || ('Color ' + (index + 1));
+            // Kalau murni hex tanpa nama → "Color N", selain itu tampilkan apa adanya
+            return this._normalizeHexColor(color) ? 'Color ' + (index + 1) : (color || ('Color ' + (index + 1)));
         },
 
         _renderColorLabel: function(value, index, dotSize = 10) {
@@ -2662,8 +2662,23 @@
             if (!input) return;
             const rawInput = String(input.value || '').trim();
             if (!rawInput) return;
-            const val = this._formatColorValue(rawInput);
-            const customName = nameInput ? String(nameInput.value || '').trim() : '';
+
+            const hex = this._normalizeHexColor(rawInput);
+            // Kalau input adalah hex murni, pakai sebagai color value
+            // Kalau input adalah nama warna (misal "biru bmw", "navy"), simpan sebagai name::color
+            // supaya header tabel dan label selalu menampilkan nama yang diketik
+            let val, customName;
+            if (hex) {
+                // Input berupa hex — nama bisa dari nameInput (opsional)
+                val = hex;
+                customName = nameInput ? String(nameInput.value || '').trim() : '';
+            } else {
+                // Input berupa nama warna — nama = rawInput, color = rawInput (untuk CSS preview)
+                val = rawInput.toLowerCase();
+                // nameInput bisa override nama tampilan, tapi default pakai rawInput
+                customName = (nameInput && String(nameInput.value || '').trim()) || rawInput;
+            }
+
             const token = this._buildColorToken(customName, val);
             const exists = this._colorList.some(c => {
                 const parsed = this._parseColorToken(c);
