@@ -2887,7 +2887,9 @@
                         stock: item.stock ?? 0,
                         images: (item.images && item.images.length > 0) ? item.images : (item.image_url ? [item.image_url] : [PLACEHOLDER]),
                         category: item.category_name || item.category || "Uncategorized",
-                        color: item.color || null,
+                        color: (Array.isArray(item.colors) && item.colors.length > 0)
+                            ? item.colors
+                            : item.color || null,
                         sizes: Array.isArray(item.sizes) && item.sizes.length > 0 ? item.sizes : [],
                         description: item.description || null,
                         rating: item.rating || 5,
@@ -5864,7 +5866,9 @@
                         price: parseFloat(item.price) || 0,
                         originalPrice: item.original_price || item.originalPrice || null,
                         category: item.category_name || item.category || 'Uncategorized',
-                        color: item.color || '',
+                        color: (Array.isArray(item.colors) && item.colors.length > 0)
+                            ? item.colors
+                            : item.color || '',
                         stock: item.stock != null ? item.stock : 0,
                         status: item.status || null,
                         discount: item.discount || null,
