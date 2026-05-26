@@ -1460,7 +1460,8 @@
         if (!url || typeof url !== 'string') return null;
         const clean = url.trim();
         if (!clean) return null;
-         if (/^(data:|blob:)/i.test(clean)) return clean;
+        // data: and blob: URLs are local previews only — never send to server
+        if (/^(data:|blob:)/i.test(clean)) return null;
 
         const apiOrigin = new URL(API_BASE).origin;
         const pageProtocol = location.protocol === 'file:' ? 'https:' : location.protocol;
@@ -3045,7 +3046,9 @@
             const description=document.getElementById('p-description').value, color=app._colorList.join(',');
             const weight=parseInt(document.getElementById('p-weight').value)||500;
             // existing server URLs (tidak perlu di-upload ulang)
-            let imageUrls = normalizeImageList(app.currentImages || []);
+            // Strip any stale data:/blob: preview URLs — hanya kirim URL server
+            const safeCurrentImages = (app.currentImages || []).filter(u => typeof u === 'string' && !/^(data:|blob:)/i.test(u.trim()));
+            let imageUrls = normalizeImageList(safeCurrentImages);
             // pending files = gambar baru yang dipilih user, belum di-upload
             const pendingFiles = app._pendingFiles || [];
             if (pendingFiles.length > 0) {
