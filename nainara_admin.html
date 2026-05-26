@@ -3077,15 +3077,8 @@
             // color string dibatasi 100 char untuk kompatibilitas kolom VARCHAR(100) di DB
             // _colorList token format: "nama::hex" atau hanya "nama"
             const _colorTokens = app._colorList || [];
-            // Untuk field 'color' (VARCHAR 100): pakai nama display saja, dipisah koma
-            const _colorNames = _colorTokens.map(t => {
-                const sep = t.indexOf('::');
-                return sep === -1 ? t : t.slice(0, sep).trim();
-            }).filter(Boolean);
-            // Truncate ke 100 char agar tidak error DB
-            let color = _colorNames.join(',');
-            if (color.length > 100) color = color.substring(0, 100);
-            // Untuk field 'colors': kirim full token sebagai JSON array (tidak ada limit)
+            // Kirim full token (nama::hex) sebagai string, kolom color di DB adalah TEXT (tidak ada limit)
+            const color = _colorTokens.join(',');
             const colors = _colorTokens;
             const weight=parseInt(document.getElementById('p-weight').value)||500;
             // existing server URLs (tidak perlu di-upload ulang)
