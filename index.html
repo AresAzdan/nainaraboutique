@@ -2117,6 +2117,19 @@
         </div>
     </div>
 
+
+    <!-- Login Gate Modal -->
+    <div id="login-gate-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;padding:36px 28px;width:90%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.2);position:relative;animation:lgFadeIn 0.25s ease;">
+            <button onclick="app.closeLoginGate()" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:1.2rem;color:#9ca3af;cursor:pointer;line-height:1;"><i class="fa-solid fa-xmark"></i></button>
+            <div style="width:52px;height:52px;border-radius:50%;background:#f0ede6;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;"><i class="fa-solid fa-lock" style="font-size:1.3rem;color:#5D5340;"></i></div>
+            <h3 style="font-size:1.15rem;font-weight:700;color:#302718;margin-bottom:8px;" id="login-gate-title">Login Diperlukan</h3>
+            <p style="font-size:0.9rem;color:#6b7280;margin-bottom:24px;line-height:1.5;" id="login-gate-msg">Login atau buat akun untuk melanjutkan belanja.</p>
+            <button onclick="app.closeLoginGate();app.openAuthModal('login');" style="width:100%;padding:12px;border-radius:8px;background:#463e31;color:#fff;border:none;font-size:0.95rem;font-weight:600;cursor:pointer;margin-bottom:10px;"><i class="fa-solid fa-right-to-bracket" style="margin-right:6px;"></i> Masuk / Sign In</button>
+            <button onclick="app.closeLoginGate();app.openAuthModal('register');" style="width:100%;padding:12px;border-radius:8px;background:#fff;color:#463e31;border:1.5px solid #463e31;font-size:0.95rem;font-weight:600;cursor:pointer;"><i class="fa-solid fa-user-plus" style="margin-right:6px;"></i> Buat Akun</button>
+        </div>
+    </div>
+    <style>@keyframes lgFadeIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}</style>
     <!-- Scripts -->
     <script>
         const translations = {
@@ -3383,6 +3396,11 @@
             
             toggleWishlist(id, event) {
                 if (event) event.stopPropagation();
+                // Require login
+                if (!this.getToken()) {
+                    this.openLoginGate('Login atau buat akun untuk menyimpan produk ke wishlist.');
+                    return;
+                }
                 const p = this.data.products.find(x => x.id === id);
                 const index = this.data.wishlist.indexOf(id);
                 
@@ -3437,7 +3455,11 @@
             },
 
             async addToCart(id, size = null, event, qty = 1) {
-                // Guest-mode: add directly to local cart (no login required)
+                // Require login
+                if (!this.getToken()) {
+                    this.openLoginGate('Login atau buat akun untuk menambahkan produk ke keranjang.');
+                    return;
+                }
                 const p = this.data.products.find(x => x.id === id);
                 if (!p) return;
                 const existingItem = this.data.cart.find(i => i.id === id && i.size === (size || null));
@@ -5210,6 +5232,12 @@
                 const btn = document.getElementById('btn-snap-pay');
                 const noticeArea = document.getElementById('payment-notice-area');
 
+                // Require login
+                if (!this.getToken()) {
+                    this.openLoginGate('Login atau buat akun untuk melanjutkan pembayaran.');
+                    return;
+                }
+
                 // Ensure Snap is loaded
                 if (typeof window.snap === 'undefined') {
                     if (noticeArea) noticeArea.innerHTML = `
@@ -5595,6 +5623,19 @@
             /** Returns the stored JWT, or null if not logged in. */
             getToken() {
                 return localStorage.getItem('token') || null;
+            },
+
+            /** Tampilkan popup login gate untuk guest user */
+            openLoginGate(msg) {
+                const overlay = document.getElementById('login-gate-overlay');
+                const msgEl = document.getElementById('login-gate-msg');
+                if (msgEl) msgEl.textContent = msg || 'Login atau buat akun untuk melanjutkan belanja.';
+                if (overlay) { overlay.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+            },
+
+            closeLoginGate() {
+                const overlay = document.getElementById('login-gate-overlay');
+                if (overlay) { overlay.style.display = 'none'; document.body.style.overflow = ''; }
             },
 
             /** Build Authorization header object; returns {} if not logged in. */
