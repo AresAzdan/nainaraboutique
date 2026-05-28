@@ -966,7 +966,7 @@
             <!-- VIEW: ACTIVITY LOG -->
             <div id="view-activity" class="hidden">
                 <div class="card">
-                    <div class="section-header"><div class="section-title">System Activity Log</div></div>
+                    <div class="section-header"><div><div class="section-title">System Activity Log</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Showing saved activity from the last 14 days.</div></div></div>
                     <div class="activity-filter-group">
                         <div class="filter-chip active" onclick="app.renderActivityLog('all',this)">All Activity</div>
                         <div class="filter-chip" onclick="app.renderActivityLog('products',this)">Products</div>
@@ -1571,7 +1571,6 @@
                     document.getElementById('dd-username').textContent = name;
                 } catch(e) {}
             }
-            this.data.activityLogs.push({ id:100, action:'System Init', description:'Dashboard loaded', type:'settings', timestamp: new Date(Date.now()-3600000) });
             this.loadAllData();
             document.addEventListener('click', (e) => {
                 const panel = document.getElementById('notif-panel');
@@ -1595,7 +1594,7 @@
         loadAllData: async function() {
             this.showLoading(true);
             try {
-                const [products, orders, categories, customers, discounts, returns, homepage, sizeGuides] = await Promise.all([
+                const [products, orders, categories, customers, discounts, returns, homepage, sizeGuides, activityLogs] = await Promise.all([
                     apiFetch('/api/products'),
                     apiFetch('/api/admin/orders'),
                     apiFetch('/api/categories'),
@@ -1603,7 +1602,8 @@
                     apiFetch('/api/admin/discounts'),
                     apiFetch('/api/admin/returns').catch(() => []),
                     apiFetch('/api/homepage').catch(() => ({})),
-                    apiFetch('/api/admin/size-guides').catch(() => ({ data: [] }))
+                    apiFetch('/api/admin/size-guides').catch(() => ({ data: [] })),
+                    apiFetch('/api/admin/activity-logs?days=14').catch(() => ({ data: [] }))
                 ]);
                 const rawProducts = Array.isArray(products) ? products : (products?.data || []);
                 this.data.products = rawProducts.map(p => normalizeProduct(p));
@@ -1627,6 +1627,7 @@
                 this.data.returns    = Array.isArray(returns)    ? returns    : (returns?.data   || []);
                 this.data.homepage   = homepage || {};
                 this.data.sizeGuides = Array.isArray(sizeGuides) ? sizeGuides : (sizeGuides?.data || []);
+                this.data.activityLogs = this.normalizeActivityLogs(Array.isArray(activityLogs) ? activityLogs : (activityLogs?.data || []));
                 this.data.orders.forEach(o => { if (['Paid','Shipped','Completed'].includes(o.status)) o.stockDeducted = true; });
                 this.renderDashboard();
                 this.renderOrders();
@@ -1858,28 +1859,54 @@
         },
 
         addActivityLog: function(action, description, type) {
-            this.data.activityLogs.unshift({ id:Date.now(), action, description, type, timestamp:new Date() });
+            this.data.activityLogs.unshift({ id:Date.now(), action, description, type, timestamp:new Date(), actorName:'This admin session' });
             if (!document.getElementById('view-activity').classList.contains('hidden')) this.renderActivityLog(this.currentLogFilter);
         },
 
-        getRelativeTime: function(date) {
+        normalizeActivityLogs: function(logs) {
+            return (Array.isArray(logs) ? logs : []).map(log => ({
+                id: log.id,
+                action: log.action,
+                description: log.description,
+                type: log.type,
+                timestamp: log.timestamp || log.created_at,
+                actorName: log.actorName || log.actor_name || log.actorEmail || 'System',
+                metadata: log.metadata || {}
+            }));
+        },
+
+        refreshActivityLogs: async function() {
+            const res = await apiFetch('/api/admin/activity-logs?days=14').catch(() => null);
+            if (!res) return;
+            this.data.activityLogs = this.normalizeActivityLogs(Array.isArray(res) ? res : (res.data || []));
+            if (!document.getElementById('view-activity').classList.contains('hidden')) this.renderActivityLog(this.currentLogFilter || 'all');
+        },
+
+        getRelativeTime: function(value) {
+            const date = value instanceof Date ? value : new Date(value);
+            if (Number.isNaN(date.getTime())) return '-';
             const diff=Math.floor((new Date()-date)/1000);
             if (diff<60) return 'Just now';
             if (diff<3600) return `${Math.floor(diff/60)} mins ago`;
             if (diff<86400) return `${Math.floor(diff/3600)} hours ago`;
-            return date.toLocaleDateString();
+            return date.toLocaleDateString('id-ID');
         },
 
         renderActivityLog: function(filter='all', clickedEl=null) {
             this.currentLogFilter=filter;
             if (clickedEl) { document.querySelectorAll('.filter-chip').forEach(el=>el.classList.remove('active')); clickedEl.classList.add('active'); }
             const listContainer=document.getElementById('activity-log-list'); listContainer.innerHTML='';
-            const logs=this.data.activityLogs.filter(log=>filter==='all'||log.type===filter);
-            if (!logs.length) { listContainer.innerHTML=`<div class="empty-notif" style="padding:40px;border:1px dashed var(--border-color);border-radius:8px;"><i class="ph ph-clock" style="font-size:32px;color:#d1d5db;margin-bottom:8px;"></i><p>No activity recorded.</p></div>`; return; }
+            const cutoff = Date.now() - (14 * 24 * 60 * 60 * 1000);
+            const logs=this.data.activityLogs.filter(log=>{
+                const ts = new Date(log.timestamp).getTime();
+                return !Number.isNaN(ts) && ts >= cutoff && (filter==='all'||log.type===filter);
+            });
+            if (!logs.length) { listContainer.innerHTML=`<div class="empty-notif" style="padding:40px;border:1px dashed var(--border-color);border-radius:8px;"><i class="ph ph-clock" style="font-size:32px;color:#d1d5db;margin-bottom:8px;"></i><p>No activity recorded in the last 14 days.</p></div>`; return; }
             logs.forEach(log => {
                 const iconMap={products:['ph-tag','act-icon-product'],orders:['ph-shopping-cart','act-icon-order'],stock:['ph-package','act-icon-stock'],discounts:['ph-percent','act-icon-discount'],settings:['ph-gear','act-icon-settings']};
                 const [icon,iconClass]=iconMap[log.type]||['ph-info','act-icon-settings'];
-                listContainer.innerHTML+=`<div class="activity-item"><div class="activity-icon ${iconClass}"><i class="ph ${icon}"></i></div><div class="activity-content"><div class="activity-title">${log.action}</div><div class="activity-desc">${log.description}</div><div class="activity-time">${this.getRelativeTime(log.timestamp)}</div></div></div>`;
+                const actor=log.actorName?` · by ${this.escapeHtml(log.actorName)}`:'';
+                listContainer.innerHTML+=`<div class="activity-item"><div class="activity-icon ${iconClass}"><i class="ph ${icon}"></i></div><div class="activity-content"><div class="activity-title">${this.escapeHtml(log.action)}</div><div class="activity-desc">${this.escapeHtml(log.description)}</div><div class="activity-time">${this.getRelativeTime(log.timestamp)}${actor}</div></div></div>`;
             });
         },
 
@@ -3115,13 +3142,13 @@
                     await apiFetch(`/api/admin/products/${id}`,{method:'PUT',body:JSON.stringify(payload)});
                     const index=this.data.products.findIndex(p=>String(p.id)===String(id));
                     if (index!==-1) this.data.products[index]=normalizeProduct(this.data.products[index], {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:this.data.products[index].id,sales:this.data.products[index].sales});
-                    this.addActivityLog('Product Edited',`Updated: ${name}`,'products');
+                    await this.refreshActivityLogs();
                     this.showToast('✅ Product updated');
                 } else {
                     const created=await apiFetch('/api/admin/products',{method:'POST',body:JSON.stringify(payload)});
                     const newProduct=normalizeProduct(created?.product || {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:Date.now(),sales:0}, {images:imageUrls,image:imageUrls[0]||null,sizes,size_stocks});
                     this.data.products.push(newProduct);
-                    this.addActivityLog('Product Added',`Added: ${name}`,'products');
+                    await this.refreshActivityLogs();
                     this.showToast('✅ Product added');
                 }
                 if (sizeGuidePayload.save_size_guide) {
@@ -3151,7 +3178,7 @@
                 if (this.deleteType==='product') {
                     await apiFetch(`/api/admin/products/${this.productToDeleteId}`,{method:'DELETE'});
                     const index=this.data.products.findIndex(p=>String(p.id)===String(this.productToDeleteId));
-                    if (index!==-1) { this.deletedProduct={item:this.data.products[index],index,type:'product'}; const pName=this.data.products[index].name; this.data.products.splice(index,1); this.renderProducts(); this.addActivityLog('Product Deleted',`Removed: ${pName}`,'products'); }
+                    if (index!==-1) { this.deletedProduct={item:this.data.products[index],index,type:'product'}; this.data.products.splice(index,1); this.renderProducts(); await this.refreshActivityLogs(); }
                 } else if (this.deleteType==='discount') {
                     await apiFetch(`/api/admin/discounts/${this.productToDeleteId}`,{method:'DELETE'});
                     const index=this.data.discounts.findIndex(d=>String(d.id)===String(this.productToDeleteId));

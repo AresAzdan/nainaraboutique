@@ -1,6 +1,7 @@
 const db           = require('../config/db');
 const ProductModel = require('../models/productModel');
 const { createError } = require('../middleware/errorHandler');
+const { recordActivityLog } = require('./activityController');
 
 // ─── GET /api/products ────────────────────────────────────────────────────────
 const parsePositiveInteger = (value, fallback) => {
@@ -8,6 +9,18 @@ const parsePositiveInteger = (value, fallback) => {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const formatAuditPrice = (value) => `Rp ${Number(value || 0).toLocaleString('id-ID')}`;
+
+const getProductAuditSnapshot = async (id) => {
+  const { rows } = await db.query(
+    `SELECT id, name, price, stock, category_id
+     FROM products
+     WHERE id = $1`,
+    [id]
+  );
+  return rows[0] || null;
 };
 
 const getProducts = async (req, res, next) => {
@@ -142,6 +155,22 @@ const createProduct = async (req, res, next) => {
       size_guide_name,
     });
 
+    await recordActivityLog({
+      req,
+      action: 'Product Added',
+      description: `Added: ${product.name} | Price: ${formatAuditPrice(product.price)} | Stock: ${product.stock}`,
+      type: 'products',
+      entityType: 'product',
+      entityId: product.id,
+      metadata: {
+        productId: product.id,
+        name: product.name,
+        price: Number(product.price),
+        stock: Number(product.stock || 0),
+        categoryId: product.category_id,
+      },
+    });
+
     res.status(201).json({ message: 'Product created.', product });
   } catch (err) {
     next(err);
@@ -151,8 +180,40 @@ const createProduct = async (req, res, next) => {
 // ─── PUT /api/admin/products/:id  [Admin only] ────────────────────────────────
 const updateProduct = async (req, res, next) => {
   try {
+    const before = await getProductAuditSnapshot(req.params.id);
     const product = await ProductModel.update(req.params.id, req.body);
     if (!product) throw createError(404, 'Product not found.');
+
+    const priceChanged = before && Number(before.price) !== Number(product.price);
+    const stockChanged = before && Number(before.stock || 0) !== Number(product.stock || 0);
+    const changes = [];
+    if (priceChanged) changes.push(`Price: ${formatAuditPrice(before.price)} → ${formatAuditPrice(product.price)}`);
+    if (stockChanged) changes.push(`Stock: ${before.stock || 0} → ${product.stock || 0}`);
+
+    await recordActivityLog({
+      req,
+      action: 'Product Edited',
+      description: `Updated: ${product.name}${changes.length ? ` | ${changes.join(' | ')}` : ''}`,
+      type: 'products',
+      entityType: 'product',
+      entityId: product.id,
+      metadata: {
+        productId: product.id,
+        before: before ? {
+          name: before.name,
+          price: Number(before.price),
+          stock: Number(before.stock || 0),
+          categoryId: before.category_id,
+        } : null,
+        after: {
+          name: product.name,
+          price: Number(product.price),
+          stock: Number(product.stock || 0),
+          categoryId: product.category_id,
+        },
+      },
+    });
+
     res.json({ message: 'Product updated.', product });
   } catch (err) {
     next(err);
@@ -162,8 +223,30 @@ const updateProduct = async (req, res, next) => {
 // ─── DELETE /api/admin/products/:id  [Admin only] ─────────────────────────────
 const deleteProduct = async (req, res, next) => {
   try {
+    const before = await getProductAuditSnapshot(req.params.id);
     const deleted = await ProductModel.delete(req.params.id);
     if (!deleted) throw createError(404, 'Product not found.');
+
+    await recordActivityLog({
+      req,
+      action: 'Product Deleted',
+      description: before
+        ? `Removed: ${before.name} | Price: ${formatAuditPrice(before.price)} | Stock: ${before.stock || 0}`
+        : `Removed product #${req.params.id}`,
+      type: 'products',
+      entityType: 'product',
+      entityId: req.params.id,
+      metadata: {
+        productId: Number(req.params.id),
+        before: before ? {
+          name: before.name,
+          price: Number(before.price),
+          stock: Number(before.stock || 0),
+          categoryId: before.category_id,
+        } : null,
+      },
+    });
+
     res.json({ message: 'Product deleted.' });
   } catch (err) {
     next(err);

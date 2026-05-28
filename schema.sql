@@ -5,6 +5,7 @@
 -- ------------------------------------------------------------
 
 -- Drop tables in reverse dependency order (for clean resets)
+DROP TABLE IF EXISTS activity_logs     CASCADE;
 DROP TABLE IF EXISTS promo_code_uses   CASCADE;
 DROP TABLE IF EXISTS promo_codes       CASCADE;
 DROP TABLE IF EXISTS user_addresses    CASCADE;
@@ -52,6 +53,24 @@ CREATE TABLE user_addresses (
   is_default     BOOLEAN      NOT NULL DEFAULT false,
   created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- -------------------------
+-- ACTIVITY LOGS
+-- -------------------------
+CREATE TABLE activity_logs (
+  id          BIGSERIAL PRIMARY KEY,
+  actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action      VARCHAR(100) NOT NULL,
+  description TEXT         NOT NULL,
+  type        VARCHAR(50)  NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id   VARCHAR(100),
+  metadata    JSONB        NOT NULL DEFAULT '{}'::JSONB,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_activity_logs_created_at ON activity_logs(created_at DESC);
+CREATE INDEX idx_activity_logs_type_created_at ON activity_logs(type, created_at DESC);
 
 -- -------------------------
 -- CATEGORIES

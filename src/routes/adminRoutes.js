@@ -12,6 +12,8 @@ const { getAllOrders, adminGetOrder, adminUpdateOrderStatus, adminDeleteOrder } 
 
 const { getAllDiscounts, createDiscount, updateDiscount, deleteDiscount } = require('../controllers/discountController');
 const { getAllCustomers, getCustomer } = require('../controllers/customerController');
+
+const { getActivityLogs } = require('../controllers/activityController');
 const { getAllPromoCodes, createPromoCode, updatePromoCode, deletePromoCode } = require('../controllers/promoController');
 const { uploadImages } = require('../controllers/uploadController');
 const { updateHomepage } = require('../controllers/settingsController');
@@ -19,6 +21,9 @@ const { getSizeGuides, createSizeGuide, updateSizeGuide, deleteSizeGuide } = req
 
 // All admin routes require authentication + admin role
 router.use(authenticate, authorizeAdmin);
+
+// ── Activity Logs ─────────────────────────────
+router.get('/activity-logs', getActivityLogs);
 
 // ── Returns ───────────────────────────────────
 router.get('/returns', getAllReturns);
