@@ -12,7 +12,7 @@ const { getAllOrders, adminGetOrder, adminUpdateOrderStatus, adminDeleteOrder } 
 
 const { getAllDiscounts, createDiscount, updateDiscount, deleteDiscount } = require('../controllers/discountController');
 const { getAllCustomers, getCustomer } = require('../controllers/customerController');
-const { getAllPromoCodes, createPromoCode, deletePromoCode } = require('../controllers/promoController');
+const { getAllPromoCodes, createPromoCode, updatePromoCode, deletePromoCode } = require('../controllers/promoController');
 const { uploadImages } = require('../controllers/uploadController');
 const { updateHomepage } = require('../controllers/settingsController');
 const { getSizeGuides, createSizeGuide, updateSizeGuide, deleteSizeGuide } = require('../controllers/sizeGuideController');
@@ -65,6 +65,7 @@ router.get('/customers/:id', getCustomer);
 // ── Promo Codes ───────────────────────────────
 router.get('/promo-codes',        getAllPromoCodes);
 router.post('/promo-codes',       createPromoCode);
+router.put('/promo-codes/:id',    updatePromoCode);
 router.delete('/promo-codes/:id', deletePromoCode);
 
 module.exports = router;
