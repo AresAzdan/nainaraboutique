@@ -12,6 +12,7 @@ const { getAllOrders, adminGetOrder, adminUpdateOrderStatus, adminDeleteOrder } 
 
 const { getAllDiscounts, createDiscount, updateDiscount, deleteDiscount } = require('../controllers/discountController');
 const { getAllCustomers, getCustomer } = require('../controllers/customerController');
+
 const { getActivityLogs } = require('../controllers/activityController');
 const { getAllPromoCodes, createPromoCode, updatePromoCode, deletePromoCode } = require('../controllers/promoController');
 const { uploadImages } = require('../controllers/uploadController');
