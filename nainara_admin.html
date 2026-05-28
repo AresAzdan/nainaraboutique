@@ -966,7 +966,7 @@
             <!-- VIEW: ACTIVITY LOG -->
             <div id="view-activity" class="hidden">
                 <div class="card">
-                    <div class="section-header"><div class="section-title">System Activity Log</div></div>
+                    <div class="section-header"><div><div class="section-title">System Activity Log</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Showing saved activity from the last 14 days.</div></div></div>
                     <div class="activity-filter-group">
                         <div class="filter-chip active" onclick="app.renderActivityLog('all',this)">All Activity</div>
                         <div class="filter-chip" onclick="app.renderActivityLog('products',this)">Products</div>
@@ -1314,7 +1314,7 @@
     <!-- DISCOUNT MODAL -->
     <div id="discount-modal" class="modal-overlay hidden">
         <div class="modal-content discount-modal-content">
-            <h3 class="section-title" style="margin-bottom:16px;">Create Discount Event</h3>
+            <h3 id="discount-modal-title" class="section-title" style="margin-bottom:16px;">Create Discount Event</h3>
             <form id="discount-form" onsubmit="app.handleDiscountSubmit(event)">
                 <div class="form-group"><label class="form-label">Event Name</label><input type="text" id="d-name" class="form-input" placeholder="e.g. Flash Sale" required></div>
                 <div class="form-group"><label class="form-label">Discount Percentage (%)</label><input type="number" id="d-percent" class="form-input" min="1" max="100" required></div>
@@ -1340,7 +1340,7 @@
                 <small id="err-dates" class="error-text hidden">End date/time must be after start date/time.</small>
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary" onclick="app.closeDiscountModal()">Cancel</button>
-                    <button type="submit" class="btn-primary">Create Event</button>
+                    <button type="submit" id="discount-submit-btn" class="btn-primary">Create Event</button>
                 </div>
             </form>
         </div>
@@ -1515,8 +1515,13 @@
         const images = normalizeImageList(merged.images);
         const fallbackImages = normalizeImageList(merged.image_url || merged.image);
         const normalizedImages = images.length ? images : fallbackImages;
+        const basePrice = Number(merged.base_price ?? merged.original_price ?? merged.price ?? 0);
+        const displayPrice = Number(merged.final_price ?? merged.price ?? basePrice);
         return {
             ...merged,
+            price: basePrice,
+            basePrice,
+            finalPrice: displayPrice,
             categoryId: merged.category_id ?? merged.categoryId,
             image: normalizedImages[0] || null,
             images: normalizedImages,
@@ -1566,7 +1571,6 @@
                     document.getElementById('dd-username').textContent = name;
                 } catch(e) {}
             }
-            this.data.activityLogs.push({ id:100, action:'System Init', description:'Dashboard loaded', type:'settings', timestamp: new Date(Date.now()-3600000) });
             this.loadAllData();
             document.addEventListener('click', (e) => {
                 const panel = document.getElementById('notif-panel');
@@ -1590,7 +1594,7 @@
         loadAllData: async function() {
             this.showLoading(true);
             try {
-                const [products, orders, categories, customers, discounts, returns, homepage, sizeGuides] = await Promise.all([
+                const [products, orders, categories, customers, discounts, returns, homepage, sizeGuides, activityLogs] = await Promise.all([
                     apiFetch('/api/products'),
                     apiFetch('/api/admin/orders'),
                     apiFetch('/api/categories'),
@@ -1598,7 +1602,8 @@
                     apiFetch('/api/admin/discounts'),
                     apiFetch('/api/admin/returns').catch(() => []),
                     apiFetch('/api/homepage').catch(() => ({})),
-                    apiFetch('/api/admin/size-guides').catch(() => ({ data: [] }))
+                    apiFetch('/api/admin/size-guides').catch(() => ({ data: [] })),
+                    apiFetch('/api/admin/activity-logs?days=14').catch(() => ({ data: [] }))
                 ]);
                 const rawProducts = Array.isArray(products) ? products : (products?.data || []);
                 this.data.products = rawProducts.map(p => normalizeProduct(p));
@@ -1622,6 +1627,7 @@
                 this.data.returns    = Array.isArray(returns)    ? returns    : (returns?.data   || []);
                 this.data.homepage   = homepage || {};
                 this.data.sizeGuides = Array.isArray(sizeGuides) ? sizeGuides : (sizeGuides?.data || []);
+                this.data.activityLogs = this.normalizeActivityLogs(Array.isArray(activityLogs) ? activityLogs : (activityLogs?.data || []));
                 this.data.orders.forEach(o => { if (['Paid','Shipped','Completed'].includes(o.status)) o.stockDeducted = true; });
                 this.renderDashboard();
                 this.renderOrders();
@@ -1853,28 +1859,54 @@
         },
 
         addActivityLog: function(action, description, type) {
-            this.data.activityLogs.unshift({ id:Date.now(), action, description, type, timestamp:new Date() });
+            this.data.activityLogs.unshift({ id:Date.now(), action, description, type, timestamp:new Date(), actorName:'This admin session' });
             if (!document.getElementById('view-activity').classList.contains('hidden')) this.renderActivityLog(this.currentLogFilter);
         },
 
-        getRelativeTime: function(date) {
+        normalizeActivityLogs: function(logs) {
+            return (Array.isArray(logs) ? logs : []).map(log => ({
+                id: log.id,
+                action: log.action,
+                description: log.description,
+                type: log.type,
+                timestamp: log.timestamp || log.created_at,
+                actorName: log.actorName || log.actor_name || log.actorEmail || 'System',
+                metadata: log.metadata || {}
+            }));
+        },
+
+        refreshActivityLogs: async function() {
+            const res = await apiFetch('/api/admin/activity-logs?days=14').catch(() => null);
+            if (!res) return;
+            this.data.activityLogs = this.normalizeActivityLogs(Array.isArray(res) ? res : (res.data || []));
+            if (!document.getElementById('view-activity').classList.contains('hidden')) this.renderActivityLog(this.currentLogFilter || 'all');
+        },
+
+        getRelativeTime: function(value) {
+            const date = value instanceof Date ? value : new Date(value);
+            if (Number.isNaN(date.getTime())) return '-';
             const diff=Math.floor((new Date()-date)/1000);
             if (diff<60) return 'Just now';
             if (diff<3600) return `${Math.floor(diff/60)} mins ago`;
             if (diff<86400) return `${Math.floor(diff/3600)} hours ago`;
-            return date.toLocaleDateString();
+            return date.toLocaleDateString('id-ID');
         },
 
         renderActivityLog: function(filter='all', clickedEl=null) {
             this.currentLogFilter=filter;
             if (clickedEl) { document.querySelectorAll('.filter-chip').forEach(el=>el.classList.remove('active')); clickedEl.classList.add('active'); }
             const listContainer=document.getElementById('activity-log-list'); listContainer.innerHTML='';
-            const logs=this.data.activityLogs.filter(log=>filter==='all'||log.type===filter);
-            if (!logs.length) { listContainer.innerHTML=`<div class="empty-notif" style="padding:40px;border:1px dashed var(--border-color);border-radius:8px;"><i class="ph ph-clock" style="font-size:32px;color:#d1d5db;margin-bottom:8px;"></i><p>No activity recorded.</p></div>`; return; }
+            const cutoff = Date.now() - (14 * 24 * 60 * 60 * 1000);
+            const logs=this.data.activityLogs.filter(log=>{
+                const ts = new Date(log.timestamp).getTime();
+                return !Number.isNaN(ts) && ts >= cutoff && (filter==='all'||log.type===filter);
+            });
+            if (!logs.length) { listContainer.innerHTML=`<div class="empty-notif" style="padding:40px;border:1px dashed var(--border-color);border-radius:8px;"><i class="ph ph-clock" style="font-size:32px;color:#d1d5db;margin-bottom:8px;"></i><p>No activity recorded in the last 14 days.</p></div>`; return; }
             logs.forEach(log => {
                 const iconMap={products:['ph-tag','act-icon-product'],orders:['ph-shopping-cart','act-icon-order'],stock:['ph-package','act-icon-stock'],discounts:['ph-percent','act-icon-discount'],settings:['ph-gear','act-icon-settings']};
                 const [icon,iconClass]=iconMap[log.type]||['ph-info','act-icon-settings'];
-                listContainer.innerHTML+=`<div class="activity-item"><div class="activity-icon ${iconClass}"><i class="ph ${icon}"></i></div><div class="activity-content"><div class="activity-title">${log.action}</div><div class="activity-desc">${log.description}</div><div class="activity-time">${this.getRelativeTime(log.timestamp)}</div></div></div>`;
+                const actor=log.actorName?` · by ${this.escapeHtml(log.actorName)}`:'';
+                listContainer.innerHTML+=`<div class="activity-item"><div class="activity-icon ${iconClass}"><i class="ph ${icon}"></i></div><div class="activity-content"><div class="activity-title">${this.escapeHtml(log.action)}</div><div class="activity-desc">${this.escapeHtml(log.description)}</div><div class="activity-time">${this.getRelativeTime(log.timestamp)}${actor}</div></div></div>`;
             });
         },
 
@@ -2275,7 +2307,7 @@
                 })();
                 const bgStyle=prod.image?`background-image:url(${prod.image})`:'background-color:#f3f4f6';
                 const discountInfo=this.getBestDiscount(prod.id);
-                let priceHtml=discountInfo.hasDiscount?`<div><span class="old-price">${this.formatPrice(prod.price)}</span><span class="badge badge-danger" style="font-size:10px;padding:2px 6px">-${discountInfo.percent}%</span></div><div style="font-weight:600;color:var(--danger)">${this.formatPrice(discountInfo.finalPrice)}</div>`:this.formatPrice(prod.price);
+                let priceHtml=discountInfo.hasDiscount?`<div><span class="old-price">${this.formatPrice(prod.basePrice ?? prod.price)}</span><span class="badge badge-danger" style="font-size:10px;padding:2px 6px">-${discountInfo.percent}%</span></div><div style="font-weight:600;color:var(--danger)">${this.formatPrice(discountInfo.finalPrice)}</div>`:this.formatPrice(prod.basePrice ?? prod.price);
                 tbody.innerHTML+=`<tr id="row-${prod.id}"><td data-label="Product"><div style="display:flex;align-items:center;gap:12px;justify-content:flex-end;"><div class="product-image" style="${bgStyle};width:40px;height:40px;flex-shrink:0;"></div><div style="text-align:right;"><div style="font-weight:500;">${prod.name}</div><div style="font-size:12px;color:var(--text-muted);">Color: ${this.renderColorSummary(prod.color)}</div></div></div></td><td data-label="Category"><span class="badge badge-info">${this.getCategoryName(prod.categoryId)}</span></td><td data-label="Price">${priceHtml}</td><td data-label="Stock">${stockDisplay}</td><td data-label="Actions" class="text-right"><button class="btn-secondary" onclick="app.openProductModal(${prod.id})">Edit</button><button class="btn-danger" onclick="app.deleteProduct(${prod.id})">Delete</button></td></tr>`;
             });
         },
@@ -2397,7 +2429,7 @@
                 const prod=this.data.products.find(p=>String(p.id)===String(id)); if (!prod) return;
                 title.innerText='Edit Product'; btnSave.innerText='Save Changes';
                 document.getElementById('p-id').value=prod.id; document.getElementById('p-name').value=prod.name;
-                document.getElementById('p-category').value=prod.categoryId; document.getElementById('p-price').value=prod.price;
+                document.getElementById('p-category').value=prod.categoryId; document.getElementById('p-price').value=prod.basePrice ?? prod.price;
                 document.getElementById('p-description').value=prod.description||'';
                 app.initColorInput(prod.color || ''); document.getElementById('p-weight').value=prod.weight||500;
                 app.currentImages=Array.isArray(prod.images)?[...prod.images]:(prod.image?[prod.image]:[]);
@@ -3110,13 +3142,13 @@
                     await apiFetch(`/api/admin/products/${id}`,{method:'PUT',body:JSON.stringify(payload)});
                     const index=this.data.products.findIndex(p=>String(p.id)===String(id));
                     if (index!==-1) this.data.products[index]=normalizeProduct(this.data.products[index], {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:this.data.products[index].id,sales:this.data.products[index].sales});
-                    this.addActivityLog('Product Edited',`Updated: ${name}`,'products');
+                    await this.refreshActivityLogs();
                     this.showToast('✅ Product updated');
                 } else {
                     const created=await apiFetch('/api/admin/products',{method:'POST',body:JSON.stringify(payload)});
                     const newProduct=normalizeProduct(created?.product || {...payload,categoryId,image:imageUrls[0]||null,images:imageUrls,id:Date.now(),sales:0}, {images:imageUrls,image:imageUrls[0]||null,sizes,size_stocks});
                     this.data.products.push(newProduct);
-                    this.addActivityLog('Product Added',`Added: ${name}`,'products');
+                    await this.refreshActivityLogs();
                     this.showToast('✅ Product added');
                 }
                 if (sizeGuidePayload.save_size_guide) {
@@ -3146,7 +3178,7 @@
                 if (this.deleteType==='product') {
                     await apiFetch(`/api/admin/products/${this.productToDeleteId}`,{method:'DELETE'});
                     const index=this.data.products.findIndex(p=>String(p.id)===String(this.productToDeleteId));
-                    if (index!==-1) { this.deletedProduct={item:this.data.products[index],index,type:'product'}; const pName=this.data.products[index].name; this.data.products.splice(index,1); this.renderProducts(); this.addActivityLog('Product Deleted',`Removed: ${pName}`,'products'); }
+                    if (index!==-1) { this.deletedProduct={item:this.data.products[index],index,type:'product'}; this.data.products.splice(index,1); this.renderProducts(); await this.refreshActivityLogs(); }
                 } else if (this.deleteType==='discount') {
                     await apiFetch(`/api/admin/discounts/${this.productToDeleteId}`,{method:'DELETE'});
                     const index=this.data.discounts.findIndex(d=>String(d.id)===String(this.productToDeleteId));
@@ -3444,17 +3476,19 @@
         getBestDiscount: function(productId) {
             let best={hasDiscount:false,percent:0,finalPrice:0};
             if (!this.settings.enableDiscounts) return best;
-            const product=this.data.products.find(p=>p.id===productId); if (!product) return best;
+            const product=this.data.products.find(p=>Number(p.id)===Number(productId)); if (!product) return best;
             let maxPercent=0;
-            this.data.discounts.forEach(event => { if ((event.productIds||[]).includes(productId)&&this.isEventActive(event)) { if (event.discountPercent>maxPercent) maxPercent=event.discountPercent; } });
-            if (maxPercent>0) { best.hasDiscount=true; best.percent=maxPercent; best.finalPrice=product.price*((100-maxPercent)/100); }
-            else { best.finalPrice=product.price; }
+            this.data.discounts.forEach(event => { if ((event.productIds||[]).map(Number).includes(Number(productId))&&this.isEventActive(event)) { if (event.discountPercent>maxPercent) maxPercent=event.discountPercent; } });
+            const basePrice=Number(product.basePrice ?? product.price);
+            if (maxPercent>0) { best.hasDiscount=true; best.percent=maxPercent; best.finalPrice=basePrice*((100-maxPercent)/100); }
+            else { best.finalPrice=basePrice; }
             return best;
         },
 
         // ── COUPON MANAGEMENT (FIXED) ──────────────────────────────────────────
         _coupons: [],
         _editingCouponId: null,
+        _editingDiscountId: null,
 
         renderCoupons: async function() {
             const tbody=document.getElementById('coupons-table-body'); if (!tbody) return;
@@ -3472,7 +3506,9 @@
                         ?'<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">Active</span>'
                         :`<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">${expired?'Expired':exhausted?'Exhausted':'Inactive'}</span>`;
                     const discountLabel=`${parseFloat(c.discount_pct||0)}%`;
-                    const minOrder=c.applies_to_all ? 'All Items' : (this.data.products.find(p => p.id === c.product_id)?.name || `Product #${c.product_id || '-'}`);
+                    const scopedIds=(c.product_ids&&c.product_ids.length?c.product_ids:(c.product_id?[c.product_id]:[])).map(Number);
+                    const scopedNames=scopedIds.map(id => this.data.products.find(p => Number(p.id) === id)?.name || `Product #${id}`);
+                    const minOrder=c.applies_to_all ? 'All Items' : (scopedNames.length ? scopedNames.join(', ') : 'No products');
                     const usage=c.max_uses?`${c.used_count||0} / ${c.max_uses}`:`${c.used_count||0} / ∞`;
                     const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('id-ID'):'∞';
                     return `<tr>
@@ -3506,13 +3542,13 @@
                 const c=this._coupons.find(x=>x.id==editId); if (!c) return;
                 document.getElementById('coupon-code').value=c.code; document.getElementById('coupon-type').value='percentage';
                 document.getElementById('coupon-value').value=parseFloat(c.discount_pct)||0; document.getElementById('coupon-min-order').value='';
-                document.getElementById('coupon-limit').value=c.usage_limit||'';
+                document.getElementById('coupon-limit').value=c.max_uses||'';
                 const noExpiry=!c.expires_at;
                 document.getElementById('coupon-no-expiry').checked=noExpiry; document.getElementById('coupon-expiry').disabled=noExpiry;
                 document.getElementById('coupon-expiry').value=noExpiry?'':c.expires_at.split('T')[0];
                 document.getElementById('coupon-scope').value=c.applies_to_all?'all':'product';
                 document.getElementById('coupon-product-search').value='';
-                this._selectedProductIds=c.product_ids?c.product_ids:(c.product_id?[c.product_id]:[]);
+                this._selectedProductIds=(c.product_ids&&c.product_ids.length?c.product_ids:(c.product_id?[c.product_id]:[])).map(Number);
             }
             this.populateCouponProductOptions();
             this.toggleCouponScope();
@@ -3541,7 +3577,7 @@
             const filtered=(this.data.products||[]).filter(p=>!kw||p.name.toLowerCase().includes(kw));
             if (filtered.length===0) { list.innerHTML='<div style="padding:8px;font-size:13px;color:#9ca3af;">No products found.</div>'; return; }
             list.innerHTML=filtered.map(p=>{
-                const checked=this._selectedProductIds.includes(p.id)?'checked':'';
+                const checked=this._selectedProductIds.map(Number).includes(Number(p.id))?'checked':'';
                 return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:#374151;" onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background='none'">
                     <input type="checkbox" value="${p.id}" ${checked} onchange="app.toggleCouponProduct(${p.id})" style="width:15px;height:15px;accent-color:#1f2937;cursor:pointer;">
                     <span>${p.name}</span>
@@ -3551,7 +3587,8 @@
         },
 
         toggleCouponProduct: function(productId) {
-            const idx=this._selectedProductIds.indexOf(productId);
+            productId=Number(productId);
+            const idx=this._selectedProductIds.map(Number).indexOf(productId);
             if (idx===-1) this._selectedProductIds.push(productId);
             else this._selectedProductIds.splice(idx,1);
             this._updateCouponSelectedLabel();
@@ -3615,30 +3652,51 @@
                 if (currentDateStr>evt.endDate||(currentDateStr===evt.endDate&&currentTimeStr>evt.endTime)) statusBadge=`<span class="badge badge-danger">Expired</span>`;
                 else if (currentDateStr<evt.startDate||(currentDateStr===evt.startDate&&currentTimeStr<evt.startTime)) statusBadge=`<span class="badge badge-warning">Upcoming</span>`;
                 else statusBadge=`<span class="badge badge-success">Active</span>`;
-                tbody.innerHTML+=`<tr><td data-label="Event"><div style="font-weight:600;">${evt.name}</div><div style="font-size:12px;color:var(--text-muted);">${(evt.productIds||[]).length} Products</div></td><td data-label="Discount" style="font-weight:700;color:var(--danger);">${evt.discountPercent}% OFF</td><td data-label="Date Range" style="font-size:13px;">${evt.startDate} to ${evt.endDate}</td><td data-label="Time (WIB)" style="font-size:13px;">${evt.startTime} - ${evt.endTime}</td><td data-label="Status">${statusBadge}</td><td data-label="Actions" class="text-right"><button class="btn-danger" onclick="app.deleteEvent(${evt.id})" style="padding:4px 8px;font-size:12px;">Delete</button></td></tr>`;
+                const productIds=(evt.productIds||[]).map(Number);
+                const productNames=productIds.map(id=>this.data.products.find(p=>Number(p.id)===id)?.name || `Product #${id}`);
+                const productSummary=productNames.length ? productNames.slice(0,3).join(', ')+(productNames.length>3?` +${productNames.length-3} more`:'') : 'No products selected';
+                tbody.innerHTML+=`<tr><td data-label="Event"><div style="font-weight:600;">${evt.name}</div><div style="font-size:12px;color:var(--text-muted);">${productIds.length} Products · ${productSummary}</div></td><td data-label="Discount" style="font-weight:700;color:var(--danger);">${evt.discountPercent}% OFF</td><td data-label="Date Range" style="font-size:13px;">${evt.startDate} to ${evt.endDate}</td><td data-label="Time (WIB)" style="font-size:13px;">${evt.startTime} - ${evt.endTime}</td><td data-label="Status">${statusBadge}</td><td data-label="Actions" class="text-right"><button class="btn-secondary" onclick="app.openDiscountModal(${evt.id})" style="padding:4px 8px;font-size:12px;margin-right:6px;">Edit</button><button class="btn-danger" onclick="app.deleteEvent(${evt.id})" style="padding:4px 8px;font-size:12px;">Delete</button></td></tr>`;
             });
         },
 
-        openDiscountModal: function() {
+        openDiscountModal: function(editId=null) {
+            this._editingDiscountId=editId;
             document.getElementById('discount-modal').classList.remove('hidden');
             document.getElementById('discount-form').reset();
             document.querySelectorAll('.error-text').forEach(el=>el.classList.add('hidden'));
-            this.tempSelectedIds=new Set();
+            document.getElementById('discount-modal-title').textContent=editId?'Edit Discount Event':'Create Discount Event';
+            document.getElementById('discount-submit-btn').textContent=editId?'Save Changes':'Create Event';
             document.getElementById('d-product-search').value='';
             const catSelect=document.getElementById('d-category-filter');
-            const uniqueCatIds=[...new Set(this.data.products.map(p=>p.categoryId))];
+            const uniqueCatIds=[...new Set(this.data.products.map(p=>p.categoryId).filter(Boolean))];
             catSelect.innerHTML='<option value="">Apply Category...</option>';
             uniqueCatIds.forEach(id=>{catSelect.innerHTML+=`<option value="${id}">${this.getCategoryName(id)}</option>`;});
+
+            const event=this.data.discounts.find(d=>String(d.id)===String(editId));
+            if (event) {
+                document.getElementById('d-name').value=event.name||'';
+                document.getElementById('d-percent').value=parseFloat(event.discountPercent||event.percentage||0)||'';
+                document.getElementById('d-start-date').value=(event.startDate||'').split('T')[0];
+                document.getElementById('d-end-date').value=(event.endDate||'').split('T')[0];
+                document.getElementById('d-start-time').value=(event.startTime||'00:00').slice(0,5);
+                document.getElementById('d-end-time').value=(event.endTime||'23:59').slice(0,5);
+                document.getElementById('d-active').checked=event.isActive!==false;
+                this.tempSelectedIds=new Set((event.productIds||[]).map(Number));
+            } else {
+                this.tempSelectedIds=new Set();
+                document.getElementById('d-active').checked=true;
+            }
             this.renderProductSelector();
         },
 
         handleCategorySelect: function(selectEl) {
             const categoryId=parseInt(selectEl.value); if (!categoryId) return;
-            this.data.products.filter(p=>p.categoryId===categoryId).forEach(p=>this.tempSelectedIds.add(p.id));
+            this.data.products.filter(p=>Number(p.categoryId)===categoryId).forEach(p=>this.tempSelectedIds.add(Number(p.id)));
             selectEl.value=''; this.renderProductSelector();
         },
 
         toggleProductSelection: function(id) {
+            id=Number(id);
             if (this.tempSelectedIds.has(id)) this.tempSelectedIds.delete(id); else this.tempSelectedIds.add(id);
             this.renderProductSelector();
         },
@@ -3653,7 +3711,7 @@ renderProductSelector: function() {
     // Show selected chips above for quick removal
     chipsContainer.innerHTML = '';
     this.tempSelectedIds.forEach(id => {
-        const prod = this.data.products.find(p => p.id === id);
+        const prod = this.data.products.find(p => Number(p.id) === Number(id));
         if (prod) {
             chipsContainer.innerHTML += `<div class="chip">${prod.name}<span class="chip-remove" onclick="app.toggleProductSelection(${id})">&times;</span></div>`;
         }
@@ -3667,7 +3725,7 @@ renderProductSelector: function() {
         return;
     }
     list.forEach(p => {
-        const checked = this.tempSelectedIds.has(p.id);
+        const checked = this.tempSelectedIds.has(Number(p.id));
         resultsContainer.innerHTML += `
             <div class="search-item" onclick="app.toggleProductSelection(${p.id})"
                 style="cursor:pointer; background:${checked ? '#f0fdf4' : 'white'};">
@@ -3679,13 +3737,13 @@ renderProductSelector: function() {
                     </span>
                 </div>
                 <span style="font-size:11px; color:#9ca3af; pointer-events:none;">
-                    ${this.formatPrice(p.price)}
+                    ${this.formatPrice(p.basePrice ?? p.price)}
                 </span>
             </div>`;
     });
 },
 
-        closeDiscountModal: function() { document.getElementById('discount-modal').classList.add('hidden'); },
+        closeDiscountModal: function() { document.getElementById('discount-modal').classList.add('hidden'); this._editingDiscountId=null; },
 
         handleDiscountSubmit: async function(e) {
             e.preventDefault();
@@ -3699,11 +3757,15 @@ renderProductSelector: function() {
             if (!isValid) return;
             const payload={name,discountPercent:percent,startDate,endDate,startTime,endTime,productIds,isActive:active};
             try {
-                const res=await apiFetch('/api/admin/discounts',{method:'POST',body:JSON.stringify(payload)});
-                const newEvent={...payload,id:res?.id||res?.discount?.id||Date.now()};
-                this.data.discounts.push(newEvent);
-                this.addActivityLog('Discount Created',`Event "${name}" (${percent}% OFF)`,'discounts');
-                this.showToast('✅ Discount Event Created'); this.closeDiscountModal(); this.renderDiscounts();
+                const url=this._editingDiscountId?`/api/admin/discounts/${this._editingDiscountId}`:'/api/admin/discounts';
+                const method=this._editingDiscountId?'PUT':'POST';
+                const res=await apiFetch(url,{method,body:JSON.stringify(payload)});
+                const saved={...payload,id:this._editingDiscountId||res?.id||res?.discount?.id||Date.now(),...(res?.discount||{})};
+                const existingIndex=this.data.discounts.findIndex(d=>String(d.id)===String(saved.id));
+                if (existingIndex!==-1) this.data.discounts.splice(existingIndex,1,saved);
+                else this.data.discounts.push(saved);
+                this.addActivityLog(this._editingDiscountId?'Discount Updated':'Discount Created',`Event "${name}" (${percent}% OFF, ${productIds.length} products)`,'discounts');
+                this.showToast(this._editingDiscountId?'✅ Discount Event Updated':'✅ Discount Event Created'); this.closeDiscountModal(); this.renderDiscounts(); this.renderProducts();
             } catch(err) { this.showToast('⚠️ '+err.message); }
         },
 
