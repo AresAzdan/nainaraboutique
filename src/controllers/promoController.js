@@ -50,15 +50,22 @@ const createPromoCode = async (req, res, next) => {
 const updatePromoCode = async (req, res, next) => {
   try {
     const {
-      discount_pct, max_uses, max_uses_per_user, expires_at,
+      code, discount_pct, max_uses, max_uses_per_user, expires_at,
       is_active, applies_to_all,
       product_ids, product_id   // terima keduanya
     } = req.body;
+
+    const existing = await db.query('SELECT * FROM promo_codes WHERE id = $1', [req.params.id]);
+    if (!existing.rows.length) throw createError(404, 'Promo code not found.');
 
     const fields = [];
     const values = [];
     let idx = 1;
 
+    if (code !== undefined) {
+      if (!String(code).trim()) throw createError(400, 'Code is required.');
+      fields.push(`code = $${idx++}`); values.push(String(code).trim().toUpperCase());
+    }
     if (discount_pct !== undefined) {
       if (discount_pct < 1 || discount_pct > 100)
         throw createError(400, 'Discount must be between 1 and 100.');
@@ -72,7 +79,7 @@ const updatePromoCode = async (req, res, next) => {
 
     // Update product_ids array (dan sync product_id untuk backward compat)
     if (product_ids !== undefined || product_id !== undefined) {
-      const resolvedAll = req.body.applies_to_all ?? true;
+      const resolvedAll = req.body.applies_to_all ?? existing.rows[0].applies_to_all;
       const ids = resolvedAll ? [] : [...new Set([
         ...(Array.isArray(product_ids) ? product_ids : []),
         ...(product_id != null ? [product_id] : [])
@@ -91,7 +98,10 @@ const updatePromoCode = async (req, res, next) => {
     );
     if (!rows.length) throw createError(404, 'Promo code not found.');
     res.json({ message: 'Promo code updated.', promo: rows[0] });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.code === '23505') return next(createError(409, 'Code already exists.'));
+    next(err);
+  }
 };
 
 // DELETE /api/admin/promo-codes/:id  [Admin]

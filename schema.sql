@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS order_items       CASCADE;
 DROP TABLE IF EXISTS orders            CASCADE;
 DROP TABLE IF EXISTS cart_items        CASCADE;
 DROP TABLE IF EXISTS carts             CASCADE;
+DROP TABLE IF EXISTS discount_products CASCADE;
 DROP TABLE IF EXISTS discounts         CASCADE;
 DROP TABLE IF EXISTS size_guides       CASCADE;
 DROP TABLE IF EXISTS products          CASCADE;
@@ -157,6 +158,12 @@ CREATE TABLE discounts (
   start_time TIME           NOT NULL DEFAULT '00:00:00',
   end_time   TIME           NOT NULL DEFAULT '23:59:59',
   CHECK (end_date >= start_date)
+);
+
+CREATE TABLE discount_products (
+  discount_id INTEGER NOT NULL REFERENCES discounts(id) ON DELETE CASCADE,
+  product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  PRIMARY KEY (discount_id, product_id)
 );
 
 -- -------------------------
