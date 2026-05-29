@@ -4,7 +4,6 @@ function normalizePositiveInteger(value) {
 }
 
 function normalizeText(value) {
-function normalizeSize(value) {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
   return trimmed && trimmed !== 'null' ? trimmed : null;
@@ -19,7 +18,6 @@ function normalizeColor(value) {
 }
 
 function normalizeStockMap(value) {
-function normalizeSizeStocks(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value;
 }
@@ -115,21 +113,6 @@ function getVariantStock(product, size, color) {
 function createStockError({ productId, productName, requested, available, size, color }) {
   const variantParts = [color, size].filter(Boolean).join(' / ');
   const variantText = variantParts ? ` (${variantParts})` : '';
-function getVariantStock(product, size) {
-  const sizeKey = normalizeSize(size);
-  const sizeStocks = normalizeSizeStocks(product && product.size_stocks);
-
-  if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
-    const stock = Number(sizeStocks[sizeKey]);
-    return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0;
-  }
-
-  const stock = Number(product && product.stock);
-  return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0;
-}
-
-function createStockError({ productId, productName, requested, available, size }) {
-  const variantText = size ? ` (${size})` : '';
   const err = new Error(
     `Only ${available} left in stock for ${productName || `product ${productId}`}${variantText}. Requested ${requested}.`
   );
@@ -162,8 +145,6 @@ function aggregateRequestedItems(items) {
 
     const variantKey = `${productId}::${color || ''}::${size || ''}`;
     const current = byVariant.get(variantKey) || { productId, color, size, quantity: 0 };
-    const variantKey = `${productId}::${size || ''}`;
-    const current = byVariant.get(variantKey) || { productId, size, quantity: 0 };
     current.quantity += quantity;
     byVariant.set(variantKey, current);
   }
@@ -178,7 +159,6 @@ function validateRequestedStock(items, productSnapshots) {
     const product = productSnapshots.get(productId);
     if (!product) continue;
     const available = Number(product.stock) || 0;
-    const available = getVariantStock(product, null);
     if (requested > available) {
       throw createStockError({
         productId,
@@ -201,18 +181,6 @@ function validateRequestedStock(items, productSnapshots) {
     if (!color && size && !hasVariantStocks && !hasSizeStocks) continue;
 
     const available = getVariantStock(product, size, color);
-      });
-    }
-  }
-
-  for (const { productId, size, quantity } of byVariant.values()) {
-    if (!size) continue;
-    const product = productSnapshots.get(productId);
-    if (!product) continue;
-    const sizeStocks = normalizeSizeStocks(product.size_stocks);
-    if (!Object.prototype.hasOwnProperty.call(sizeStocks, size)) continue;
-
-    const available = getVariantStock(product, size);
     if (quantity > available) {
       throw createStockError({
         productId,
@@ -235,7 +203,6 @@ async function getStockSnapshots(items, queryable, { forUpdate = false } = {}) {
 
   const { rows } = await queryable.query(
     `SELECT id, name, stock, size_stocks, variant_stocks
-    `SELECT id, name, stock, size_stocks
      FROM products
      WHERE id = ANY($1::int[])
      ORDER BY id
@@ -269,8 +236,6 @@ module.exports = {
   normalizeSizeStocks,
   normalizeVariantStocks,
   parseColorToken,
-  normalizeSize,
-  normalizeSizeStocks,
   validateOrderStock,
   validateRequestedStock,
 };
