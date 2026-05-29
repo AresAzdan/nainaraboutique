@@ -6,15 +6,15 @@ const {
   getMyOrder,
   updateOrderStatus,
   cancelOrder,
-  midtransNotification,
   getGuestOrder,
 } = require('../controllers/orderController');
+const { handleNotification } = require('../controllers/paymentController');
 const { authenticate } = require('../middleware/auth');
 
 // ── Public routes (NO authentication required) ────────────────────────────────
 
 // Midtrans webhook — must be public, Midtrans calls this server-to-server
-router.post('/midtrans/notification', midtransNotification);
+router.post('/midtrans/notification', handleNotification);
 
 // Guest checkout — create order without auth
 router.post('/guest', createGuestOrder);

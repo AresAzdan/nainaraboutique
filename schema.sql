@@ -150,8 +150,10 @@ CREATE TABLE orders (
                    CHECK (status IN (
                      'pending', 'paid', 'processing',
                      'shipped', 'completed', 'cancelled',
+                     'expired', 'failed', 'refunded', 'chargeback',
                      'return_requested', 'returned'
                    )),
+  stock_deducted   BOOLEAN        NOT NULL DEFAULT false,
   return_reason    TEXT,
   delivered_at     TIMESTAMPTZ,
   created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
