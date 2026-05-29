@@ -3,6 +3,7 @@ const db = require('../config/db');
 const OrderModel = require('../models/orderModel');
 const ProductModel = require('../models/productModel');
 const { buildPricedOrderItems, calculateOrderTotal } = require('../utils/orderPricing');
+const { validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Midtrans snap client ────────────────────────────────────────────────────
 const snap = new midtransClient.Snap({
@@ -134,6 +135,8 @@ exports.createOrder = async (req, res) => {
     await client.query('BEGIN');
     console.log('[createOrder] ✔ DB transaction BEGIN');
 
+    await validateOrderStock(items, client, { forUpdate: true });
+
     const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, client);
     const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
     console.log('[createOrder] ✔ items enriched:', enrichedItems.length);
@@ -236,6 +239,8 @@ exports._createOrderNoPool = async (req, res, params) => {
   } = params;
 
   try {
+    await validateOrderStock(items, db);
+
     const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, db);
     const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
 
@@ -327,6 +332,8 @@ exports.createGuestOrder = async (req, res) => {
     if (client) await client.query('BEGIN');
 
     const queryable = client || db;
+    await validateOrderStock(items, queryable, { forUpdate: !!client });
+
     const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, queryable);
     const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
 

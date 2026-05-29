@@ -1,6 +1,7 @@
 const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
+const { getVariantStock, normalizeSizeStocks, validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -20,6 +21,9 @@ const createPayment = async (req, res, next) => {
     if (order.status !== 'pending') {
       return res.status(400).json({ message: 'Order already processed' });
     }
+
+    const orderItems = await OrderModel.getOrderItems(order.id);
+    await validateOrderStock(orderItems, db);
 
     // Generate Midtrans order_id in NAINARA-{timestamp} format
     const midtransOrderId = `NAINARA-${Date.now()}`;
@@ -109,7 +113,7 @@ const FAILURE_STATUSES = ['cancelled', 'expired', 'failed'];
 
 const getOrderItemsForUpdate = async (client, orderId) => {
   const { rows } = await client.query(
-    `SELECT product_id, quantity
+    `SELECT product_id, quantity, size
      FROM order_items
      WHERE order_id = $1
      ORDER BY product_id
@@ -119,16 +123,55 @@ const getOrderItemsForUpdate = async (client, orderId) => {
   return rows;
 };
 
+const getProductForStockUpdate = async (client, productId) => {
+  const { rows } = await client.query(
+    `SELECT id, name, stock, size_stocks
+     FROM products
+     WHERE id = $1
+     FOR UPDATE`,
+    [productId]
+  );
+  return rows[0] || null;
+};
+
+const applySizeStockDelta = (product, size, delta) => {
+  const sizeStocks = normalizeSizeStocks(product.size_stocks);
+  if (!size || !Object.prototype.hasOwnProperty.call(sizeStocks, size)) return sizeStocks;
+
+  const current = getVariantStock(product, size);
+  const next = current + delta;
+  if (next < 0) {
+    throw new Error(`Insufficient stock for product ${product.id} size ${size}`);
+  }
+
+  return { ...sizeStocks, [size]: next };
+};
+
 const deductOrderStock = async (client, orderId) => {
   const items = await getOrderItemsForUpdate(client, orderId);
 
   for (const item of items) {
+    const product = await getProductForStockUpdate(client, item.product_id);
+    if (!product) throw new Error(`Product ${item.product_id} not found while settling order ${orderId}`);
+
+    const quantity = Number(item.quantity);
+    const productStock = Number(product.stock) || 0;
+    const variantStock = getVariantStock(product, item.size);
+
+    if (productStock < quantity || variantStock < quantity) {
+      throw new Error(
+        `Insufficient stock while settling order ${orderId} for product ${item.product_id}`
+      );
+    }
+
+    const nextSizeStocks = applySizeStockDelta(product, item.size, -quantity);
     const { rows } = await client.query(
       `UPDATE products
-       SET stock = stock - $1
+       SET stock = stock - $1,
+           size_stocks = $3::jsonb
        WHERE id = $2 AND stock >= $1
        RETURNING id, stock`,
-      [item.quantity, item.product_id]
+      [quantity, item.product_id, JSON.stringify(nextSizeStocks)]
     );
 
     if (!rows.length) {
@@ -143,11 +186,18 @@ const restoreOrderStock = async (client, orderId) => {
   const items = await getOrderItemsForUpdate(client, orderId);
 
   for (const item of items) {
+    const product = await getProductForStockUpdate(client, item.product_id);
+    if (!product) continue;
+
+    const quantity = Number(item.quantity);
+    const nextSizeStocks = applySizeStockDelta(product, item.size, quantity);
+
     await client.query(
       `UPDATE products
-       SET stock = stock + $1
+       SET stock = stock + $1,
+           size_stocks = $3::jsonb
        WHERE id = $2`,
-      [item.quantity, item.product_id]
+      [quantity, item.product_id, JSON.stringify(nextSizeStocks)]
     );
   }
 };

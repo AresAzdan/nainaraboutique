@@ -73,7 +73,7 @@ const OrderModel = {
     },
     client
   ) {
-    // items = [{ product_id, quantity, price, product_name }]
+    // items = [{ product_id, quantity, price, product_name, size }]
     const { rows } = await client.query(
       `INSERT INTO orders
          (user_id, total_amount, shipping_cost, discount_amount, promo_code,
@@ -97,9 +97,9 @@ const OrderModel = {
     for (const item of items) {
       // FIX 2 — write the product_name snapshot into order_items
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price, product_name)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [order.id, item.product_id, item.quantity, item.price, item.product_name || null]
+        `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [order.id, item.product_id, item.quantity, item.price, item.product_name || null, item.size || null]
       );
     }
 
