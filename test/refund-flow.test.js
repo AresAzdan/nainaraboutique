@@ -115,5 +115,17 @@ const makePool = (handlerGroups) => {
     );
   }
 
+
+  {
+    let connected = false;
+    const pool = { async connect() { connected = true; throw new Error('connect should not be called'); } };
+
+    await assert.rejects(
+      () => refundService.requestRefund({ orderId: 5, userId: 7, reason: '   ', pool }),
+      (err) => err.status === 400 && /reason is required/.test(err.message)
+    );
+    assert.strictEqual(connected, false, 'missing refund reason must be rejected before database work');
+  }
+
   console.log('refund flow regression checks passed');
 })();

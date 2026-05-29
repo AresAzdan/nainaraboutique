@@ -4486,7 +4486,7 @@
                     const orders = data.orders || data;
 
                     if (!orders || orders.length === 0) {
-                      wrapper.innerHTML = `
+                    wrapper.innerHTML = `
                         <div style="max-width:800px;margin:80px auto;text-align:center;">
                         <h2 style="margin-bottom:16px;">You haven't placed any orders yet.</h2>
                         <p style="color:#777;margin-bottom:30px;">
@@ -4725,6 +4725,8 @@
                              + ' · '
                              + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
                     })();
+                    const refundStatus = order.refund_status || 'none';
+                    const canRequestRefund = ['paid', 'settlement'].includes(order.status) && ['none', 'failed', 'rejected'].includes(refundStatus);
 
                     wrapper.innerHTML = `
                         <div style="max-width:720px; margin:60px auto;">
@@ -4756,11 +4758,20 @@
                                 </div>
                             </div>` : ''}
 
-                            <!-- Cancel CTA for orders not yet shipped -->
-                            ${['pending', 'paid', 'processing'].includes(order.status) ? `
+                            <!-- Order action CTA: pending orders can be cancelled; paid/settled orders require a refund request. -->
+                            ${(order.status === 'pending' || canRequestRefund) ? `
                             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px;">
                                 ${order.status === 'pending' ? `<button onclick="app.payOrder(${order.id})" class="btn-checkout-custom" style="width:auto;margin-top:0;padding:14px 36px;">Pay Now</button>` : ''}
-                                <button onclick="app.cancelOrder(${order.id})" style="padding:14px 28px;font-size:0.82rem;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border:1px solid var(--discount-red);color:var(--discount-red);background:transparent;border-radius:200px;cursor:pointer;transition:0.3s;font-family:inherit;" onmouseover="this.style.background='var(--discount-red)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--discount-red)'">Cancel Order</button>
+                                ${order.status === 'pending' ? `
+                                <button onclick="app.cancelOrder(${order.id}, '${order.status}')" style="padding:14px 28px;font-size:0.82rem;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border:1px solid var(--discount-red);color:var(--discount-red);background:transparent;border-radius:200px;cursor:pointer;transition:0.3s;font-family:inherit;" onmouseover="this.style.background='var(--discount-red)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--discount-red)'">Cancel Order</button>` : `
+                                <button onclick="app.requestRefund(${order.id})" style="padding:14px 28px;font-size:0.82rem;text-transform:uppercase;letter-spacing:1.5px;font-weight:600;border:1px solid var(--discount-red);color:var(--discount-red);background:transparent;border-radius:200px;cursor:pointer;transition:0.3s;font-family:inherit;" onmouseover="this.style.background='var(--discount-red)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--discount-red)'">Request Refund</button>`}
+                            </div>` : ''}
+
+                            ${refundStatus !== 'none' ? `
+                            <div style="background:#fff8f0;border:1px solid #f0e2cc;border-radius:12px;padding:18px 22px;margin-bottom:24px;">
+                                <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:1px;color:#8a6a3a;margin-bottom:6px;">Refund Status</div>
+                                <div style="font-weight:600;color:var(--text-color);">${String(refundStatus).replace('_', ' ').toUpperCase()}</div>
+                                ${order.refund_reason ? `<div style="font-size:0.85rem;color:var(--secondary-text);margin-top:6px;">Reason: ${order.refund_reason}</div>` : ''}
                             </div>` : ''}
 
                             <!-- Tracking Info -->
@@ -5003,10 +5014,28 @@
                 }
             },
 
-            cancelOrder(id) {
+            cancelOrder(id, status = 'pending') {
+                if (['paid', 'settlement'].includes(String(status).toLowerCase())) {
+                    this.requestRefund(id);
+                    return;
+                }
+
                 const overlay = document.getElementById('cancel-order-modal');
                 if (!overlay) return;
 
+                const title = document.getElementById('co-modal-title');
+                const message = document.getElementById('co-modal-message');
+                const reasonWrap = document.getElementById('co-modal-reason-wrap');
+                const reasonInput = document.getElementById('co-modal-reason');
+                const errorEl = document.getElementById('co-modal-error');
+                const confirmBtn = document.getElementById('co-modal-confirm-btn');
+
+                title.textContent = 'Cancel Order';
+                message.innerHTML = 'Are you sure you want to cancel this unpaid order?<br>This action cannot be undone.';
+                reasonWrap.style.display = 'none';
+                reasonInput.value = '';
+                errorEl.textContent = '';
+                confirmBtn.textContent = 'Confirm Cancel';
                 overlay.classList.add('co-modal--visible');
 
                 const onKeyDown = (e) => { if (e.key === 'Escape') closeCancelModal(); };
@@ -5015,13 +5044,11 @@
                 const closeCancelModal = () => {
                     overlay.classList.remove('co-modal--visible');
                     document.removeEventListener('keydown', onKeyDown);
+                    confirmBtn.disabled = false;
                 };
 
                 const executeCancel = async () => {
                     const token = localStorage.getItem("token");
-    
-
-                    const confirmBtn = document.getElementById('co-modal-confirm-btn');
                     confirmBtn.disabled = true;
                     confirmBtn.textContent = 'Cancelling…';
 
@@ -5040,17 +5067,85 @@
                         closeCancelModal();
                         this.renderOrderDetail(id);
                     } catch (err) {
-                        closeCancelModal();
-                        alert(err.message || "An error occurred while cancelling the order.");
-                    } finally {
+                        errorEl.textContent = err.message || "An error occurred while cancelling the order.";
                         confirmBtn.disabled = false;
                         confirmBtn.textContent = 'Confirm Cancel';
                     }
                 };
 
                 document.getElementById('co-modal-cancel-btn').onclick = closeCancelModal;
-                document.getElementById('co-modal-confirm-btn').onclick = executeCancel;
+                confirmBtn.onclick = executeCancel;
                 overlay.onclick = (e) => { if (e.target === overlay) closeCancelModal(); };
+            },
+
+            requestRefund(id) {
+                const overlay = document.getElementById('cancel-order-modal');
+                if (!overlay) return;
+
+                const title = document.getElementById('co-modal-title');
+                const message = document.getElementById('co-modal-message');
+                const reasonWrap = document.getElementById('co-modal-reason-wrap');
+                const reasonInput = document.getElementById('co-modal-reason');
+                const errorEl = document.getElementById('co-modal-error');
+                const confirmBtn = document.getElementById('co-modal-confirm-btn');
+
+                title.textContent = 'Request Refund';
+                message.textContent = 'Tell us why you are requesting a refund. Our team will review it before processing the Midtrans refund.';
+                reasonWrap.style.display = 'block';
+                reasonInput.value = '';
+                errorEl.textContent = '';
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Submit Refund Request';
+                overlay.classList.add('co-modal--visible');
+                setTimeout(() => reasonInput.focus(), 0);
+
+                const onKeyDown = (e) => { if (e.key === 'Escape') closeRefundModal(); };
+                document.addEventListener('keydown', onKeyDown);
+
+                const closeRefundModal = () => {
+                    overlay.classList.remove('co-modal--visible');
+                    document.removeEventListener('keydown', onKeyDown);
+                    confirmBtn.disabled = false;
+                };
+
+                const executeRefundRequest = async () => {
+                    const reason = reasonInput.value.trim();
+                    if (!reason) {
+                        errorEl.textContent = 'Refund reason is required.';
+                        reasonInput.focus();
+                        return;
+                    }
+
+                    const token = localStorage.getItem("token");
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Submitting…';
+
+                    try {
+                        const res = await fetch(`https://nainaraboutique.com/api/orders/${id}/refund-request`, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Authorization": `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ reason })
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.message || "Failed to request refund.");
+
+                        closeRefundModal();
+                        alert('Refund request submitted. We will review it shortly.');
+                        this.renderOrderDetail(id);
+                    } catch (err) {
+                        errorEl.textContent = err.message || "An error occurred while requesting the refund.";
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = 'Submit Refund Request';
+                    }
+                };
+
+                document.getElementById('co-modal-cancel-btn').onclick = closeRefundModal;
+                confirmBtn.onclick = executeRefundRequest;
+                overlay.onclick = (e) => { if (e.target === overlay) closeRefundModal(); };
             },
 
             payOrder(id) {
@@ -6209,7 +6304,12 @@
                 <i class="fa-solid fa-xmark"></i>
             </div>
             <h2 class="co-modal-title" id="co-modal-title">Cancel Order</h2>
-            <p class="co-modal-message">Are you sure you want to cancel this order?<br>This action cannot be undone.</p>
+            <p class="co-modal-message" id="co-modal-message">Are you sure you want to cancel this order?<br>This action cannot be undone.</p>
+            <div id="co-modal-reason-wrap" style="display:none;text-align:left;margin:18px 0 4px;">
+                <label for="co-modal-reason" style="display:block;font-size:0.76rem;text-transform:uppercase;letter-spacing:1px;color:var(--secondary-text);margin-bottom:8px;">Refund reason</label>
+                <textarea id="co-modal-reason" rows="4" style="width:100%;border:1px solid var(--border-color);border-radius:10px;padding:12px;font-family:inherit;font-size:0.9rem;resize:vertical;" placeholder="Please tell us why you are requesting a refund" aria-describedby="co-modal-error"></textarea>
+            </div>
+            <div id="co-modal-error" style="min-height:18px;color:var(--discount-red);font-size:0.82rem;text-align:left;margin-bottom:8px;"></div>
             <div class="co-modal-actions">
                 <button id="co-modal-cancel-btn" class="co-modal-btn co-modal-btn--secondary">Keep Order</button>
                 <button id="co-modal-confirm-btn" class="co-modal-btn co-modal-btn--danger">Confirm Cancel</button>

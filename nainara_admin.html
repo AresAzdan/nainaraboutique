@@ -1619,6 +1619,9 @@
                     shippingMethod: o.shipping_method || o.shippingMethod || '-',
                     isPickup: (o.shipping_method || '').toLowerCase().includes('pickup') || (o.shipping_service || '').toLowerCase().includes('pickup'),
                     paymentMethod: o.payment_method || o.paymentMethod || '-',
+                    refund_status: o.refund_status || o.refundStatus || 'none',
+                    refund_reason: o.refund_reason || o.refundReason || '',
+                    refund_amount: o.refund_amount || o.refundAmount || null,
                     items: o.items || []
                 }));
                 this.data.categories = Array.isArray(categories) ? categories : (categories?.data || []);
@@ -2075,6 +2078,9 @@
                     shippingMethod: o.shipping_method || o.shippingMethod || '-',
                     isPickup: (o.shipping_method || '').toLowerCase().includes('pickup') || (o.shipping_service || '').toLowerCase().includes('pickup'),
                     paymentMethod: o.payment_method || o.paymentMethod || '-',
+                    refund_status: o.refund_status || o.refundStatus || 'none',
+                    refund_reason: o.refund_reason || o.refundReason || '',
+                    refund_amount: o.refund_amount || o.refundAmount || null,
                     items: o.items || []
                 }));
                 this.data.orders.forEach(o => { if (['Paid','Shipped','Completed'].includes(o.status)) o.stockDeducted = true; });
@@ -2106,6 +2112,11 @@
                         if (detail && detail.items) {
                             order.items = detail.items;
                         }
+                        if (detail && detail.order) {
+                            order.refund_status = detail.order.refund_status || order.refund_status || 'none';
+                            order.refund_reason = detail.order.refund_reason || order.refund_reason || '';
+                            order.refund_amount = detail.order.refund_amount || order.refund_amount || null;
+                        }
                     } catch(e) { console.error('Failed to load order items:', e); }
                 }
                 const container=document.getElementById('view-order-detail');
@@ -2120,6 +2131,12 @@
                 });
                 html+=`</tbody><tfoot><tr><td colspan="3" class="text-right" style="padding-top:24px;font-weight:600;">Total Amount</td><td class="text-right" style="padding-top:24px;font-weight:700;font-size:16px;color:var(--primary);">${this.formatPrice(order.total)}</td></tr></tfoot></table></div></div>`;
                 html+=`<div style="display:flex;flex-direction:column;gap:24px;"><div class="card"><div class="section-title" style="margin-bottom:16px;">Customer Details</div><div class="detail-row"><span style="color:var(--text-muted)">Name</span><span style="font-weight:500">${order.customerName}</span></div><div class="detail-row"><span style="color:var(--text-muted)">Phone</span><span style="font-weight:500">${order.phone}</span></div><div class="detail-row"><span style="color:var(--text-muted)">Payment</span><span style="font-weight:500">${order.paymentMethod}</span></div><div style="margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;">${order.isPickup ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#fff7ed;border:1.5px solid #f0a500;border-radius:8px;padding:8px 14px;margin-bottom:10px;"><span style="font-size:1rem;">🏪</span><div><div style="font-weight:700;color:#b45309;font-size:0.9rem;">Store Pickup</div><div style="font-size:0.78rem;color:#92400e;">Customer will collect in person</div></div></div>` : `<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Shipping Address</div><div style="font-size:13px;line-height:1.4;">${order.address}<br><span style="font-weight:500;color:var(--primary);">${order.shippingMethod}</span></div>`}</div>${order.tracking_number ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;"><div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Tracking</div><div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;"><i class="ph ph-truck" style="margin-right:4px;"></i>${order.tracking_courier || 'Courier'} — <span style="font-family:monospace;letter-spacing:0.5px;">${order.tracking_number}</span><button onclick="app.trackAWB('${order.tracking_number}','${order.id}')" style="padding:4px 10px;border:1px solid var(--primary);background:transparent;color:var(--primary);border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">Track</button></div><div id="admin-tracking-${order.id}" style="display:none;margin-top:10px;"></div></div>` : ''}</div>`;
+                const refundStatus = order.refund_status || 'none';
+                const refundAmount = order.refund_amount ? this.formatPrice(parseFloat(order.refund_amount)) : this.formatPrice(order.total);
+                if (refundStatus && refundStatus !== 'none') {
+                    const canReviewRefund = ['requested', 'failed'].includes(String(refundStatus).toLowerCase());
+                    html += `<div class="card"><div class="section-title" style="margin-bottom:16px;">Refund Request</div><div class="detail-row"><span style="color:var(--text-muted)">Status</span><span style="font-weight:600;text-transform:capitalize;">${String(refundStatus).replace('_',' ')}</span></div><div class="detail-row"><span style="color:var(--text-muted)">Amount</span><span style="font-weight:600">${refundAmount}</span></div>${order.refund_reason ? `<div style="margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;"><div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Customer Reason</div><div style="font-size:13px;line-height:1.45;">${order.refund_reason}</div></div>` : ''}${canReviewRefund ? `<div style="display:flex;gap:8px;margin-top:16px;"><button class="btn-primary" style="flex:1;background:var(--success);" onclick="app.reviewRefund('${order.id}','approve')"><i class="ph ph-check"></i> Approve Refund</button><button class="btn-primary" style="flex:1;background:var(--danger);" onclick="app.reviewRefund('${order.id}','reject')"><i class="ph ph-x"></i> Reject</button></div>` : ''}<div id="refund-error" class="error-text hidden" style="margin-top:8px;text-align:right;"></div></div>`;
+                }
                 const steps=[{status:'Pending',label:'Order Placed'},{status:'Paid',label:'Payment Confirmed'},{status:'Shipped',label:'Order Shipped'},{status:'Completed',label:'Completed'}];
                 const activeIndex=['Pending','Paid','Shipped','Completed'].indexOf(order.status);
                 let timelineHtml='';
@@ -2132,6 +2149,41 @@
                 document.body.style.cursor='default';
                 this.navigateTo('order-detail');
             }, 200);
+        },
+
+        reviewRefund: async function(id, action) {
+            const order = this.data.orders.find(o => String(o.id) === String(id));
+            const errEl = document.getElementById('refund-error');
+            if (errEl) errEl.classList.add('hidden');
+
+            let reason = null;
+            if (action === 'reject') {
+                reason = prompt('Reason for rejecting this refund request (optional):') || null;
+            }
+
+            try {
+                const result = await apiFetch('/api/admin/orders/' + id + '/refund', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ action, reason })
+                });
+                const updated = result && result.order ? result.order : result;
+                if (order && updated) {
+                    order.status = updated.status ? updated.status.charAt(0).toUpperCase() + updated.status.slice(1).replace('_', ' ') : order.status;
+                    order.refund_status = updated.refund_status || order.refund_status;
+                    order.refund_reason = updated.refund_reason || order.refund_reason;
+                    order.refund_amount = updated.refund_amount || order.refund_amount;
+                }
+                this.showToast(action === 'approve' ? '✅ Refund approved and sent to Midtrans' : '✅ Refund request rejected');
+                await this.refreshOrders();
+                this.viewOrderDetail(id);
+            } catch(e) {
+                if (errEl) {
+                    errEl.innerText = e.message;
+                    errEl.classList.remove('hidden');
+                } else {
+                    this.showToast('⚠️ ' + e.message);
+                }
+            }
         },
 
         isValidTransition: function(current, next) {
