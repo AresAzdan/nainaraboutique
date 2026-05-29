@@ -3073,6 +3073,7 @@
                 const currentPrice = this.getCurrentPrice(p);
                 const originalPrice = this.getOriginalPrice(p);
                 const selectedStock = this.getAvailableStock(p, this.data.selectedSize, this.data.selectedColor);
+                const selectedStock = this.getAvailableStock(p, this.data.selectedSize);
                 const selectedStockMessage = this.formatStockMessage(selectedStock);
 
                 
@@ -3134,6 +3135,7 @@
                                 <div class="size-btn-group" id="detail-size-container">
                                     ${safeSizes.map(s => {
                                         const sizeStock = this.getAvailableStock(p, s, this.data.selectedColor);
+                                        const sizeStock = this.getAvailableStock(p, s);
                                         if (sizeStock <= 0) return `<div class="size-box disabled" title="Out of stock">${s}</div>`;
                                         const activeClass = s === this.data.selectedSize ? 'active' : '';
                                         return `<div class="size-box ${activeClass}" onclick="app.selectSizeDetail('${s}', ${p.id})">${s}</div>`;
@@ -3145,6 +3147,7 @@
 
                             <div class="action-btn-row">
                                 <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1, app.data.selectedColor)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
+                                <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
                                 <div class="btn-wishlist-modern" onclick="app.toggleWishlist(${p.id}, event)">
                                     <i class="${isWish ? 'fa-solid wishlist-icon-active' : 'fa-regular'} fa-heart"></i>
                                 </div>
@@ -3395,6 +3398,16 @@
                 }
                 const stock = this.normalizeStockValue(product.stock);
                 return stock === null ? 0 : stock;
+            getAvailableStock(product, size = null) {
+                if (!product) return 0;
+                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
+                const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' ? product.size_stocks : {};
+                if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
+                    const variantStock = Number(sizeStocks[sizeKey]);
+                    return Number.isFinite(variantStock) ? Math.max(0, Math.floor(variantStock)) : 0;
+                }
+                const stock = Number(product.stock);
+                return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0;
             },
 
             formatStockMessage(stock) {
@@ -3407,6 +3420,7 @@
             updateProductStockUI(product) {
                 if (!product) return;
                 const stock = this.getAvailableStock(product, this.data.selectedSize, this.data.selectedColor);
+                const stock = this.getAvailableStock(product, this.data.selectedSize);
                 const message = document.getElementById('pd-stock-message');
                 if (message) {
                     message.textContent = this.formatStockMessage(stock);
@@ -3581,6 +3595,8 @@
                 const colorLabel = normalizedColor ? this.displayColorName(normalizedColor) : null;
                 const availableStock = this.getAvailableStock(p, normalizedSize, normalizedColor);
                 const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize && (i.color || null) === normalizedColor);
+                const availableStock = this.getAvailableStock(p, normalizedSize);
+                const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize);
                 const currentQty = existingItem ? Number(existingItem.qty || 0) : 0;
                 const nextQty = currentQty + qty;
                 if (nextQty > availableStock) {
@@ -3637,6 +3653,9 @@
                 const itemsHtml = items.map((item, index) => {
                     const product = this.data.products.find(p => Number(p.id) === Number(item.id));
                     const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
+                const itemsHtml = items.map(item => {
+                    const product = this.data.products.find(p => Number(p.id) === Number(item.id));
+                    const availableStock = product ? this.getAvailableStock(product, item.size) : Number(item.stock || 0);
                     item.stock = availableStock;
                     if (availableStock > 0 && item.qty > availableStock) item.qty = availableStock;
                     const plusDisabled = availableStock <= 0 || item.qty >= availableStock;
@@ -3654,6 +3673,7 @@
                                         <button onclick="app.decreaseCartItemQty(${index})">−</button>
                                         <span>${item.qty}</span>
                                         <button onclick="app.increaseCartItemQty(${index})" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
+                                        <button onclick="app.increaseQty(${item.id}, '${item.size || ''}')" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
                                     </div>
                                     ${plusDisabled ? `<div class="cart-stock-note">${this.formatStockMessage(availableStock)}</div>` : ''}
                                 </div>
@@ -3678,6 +3698,12 @@
                 if (!item) return;
                 const product = this.data.products.find(p => Number(p.id) === Number(item.id));
                 const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
+            increaseQty(productId, size = '') {
+                const normalizedSize = size || null;
+                const item = this.data.cart.find(i => i.id === productId && (i.size || null) === normalizedSize);
+                if (!item) return;
+                const product = this.data.products.find(p => Number(p.id) === Number(productId));
+                const availableStock = product ? this.getAvailableStock(product, normalizedSize) : Number(item.stock || 0);
                 if (item.qty >= availableStock) {
                     this.showToast(this.formatStockMessage(availableStock));
                     return;

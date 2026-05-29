@@ -10,6 +10,7 @@ const {
 (async () => {
   const stockOneProduct = new Map([
     [1, { id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {}, variant_stocks: {} }],
+    [1, { id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {} }],
   ]);
 
   assert.throws(
@@ -24,6 +25,8 @@ const {
       assert(sql.includes('variant_stocks'), 'stock validation must read color + size variant stocks');
       assert.deepStrictEqual(values, [[1]], 'stock validation should query requested product ids');
       return { rows: [{ id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {}, variant_stocks: {} }] };
+      assert.deepStrictEqual(values, [[1]], 'stock validation should query requested product ids');
+      return { rows: [{ id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {} }] };
     },
   };
 
@@ -79,6 +82,17 @@ const {
     () => validateOrderStock([{ product_id: 2, quantity: 1, size: 'XL', color: 'Color B' }], variantDb),
     (err) => err.status === 400 && err.code === 'INSUFFICIENT_STOCK',
     'backend DB validation must reject Color B + XL qty 1'
+    getVariantStock({ stock: 5, size_stocks: { S: 1, M: 3 } }, 'S'),
+    1,
+    'selected size stock must override product-level stock when size stock exists'
+  );
+
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 2, quantity: 2, size: 'S' }], new Map([
+      [2, { id: 2, name: 'Variant Dress', stock: 5, size_stocks: { S: 1, M: 4 } }],
+    ])),
+    (err) => err.status === 400 && err.details.size === 'S' && err.details.available === 1,
+    'variant stock = 1 and requested qty = 2 must be rejected'
   );
 
   const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -97,6 +111,12 @@ const {
   assert(
     indexHtml.includes('this.getAvailableStock(product, item.size, item.color)'),
     'cart quantity limit must use selected color + selected size stock'
+    indexHtml.includes('plusDisabled = availableStock <= 0 || item.qty >= availableStock'),
+    'cart + button must be disabled when quantity reaches available stock'
+  );
+  assert(
+    indexHtml.includes('if (item.qty >= availableStock)') && indexHtml.includes('this.showToast(this.formatStockMessage(availableStock))'),
+    'cart + handler must block attempts to exceed available stock'
   );
   assert(
     indexHtml.includes('Only ${safeStock} left in stock'),

@@ -28,6 +28,9 @@ const addToCart = async (req, res, next) => {
     const existingQty = await CartModel.getItemQuantity(req.user.id, product_id, size, color);
     const requestedQty = existingQty + quantity;
     if (availableStock < requestedQty) throw createError(400, `Only ${availableStock} left in stock.`);
+    const existingQty = await CartModel.getItemQuantity(req.user.id, product_id);
+    const requestedQty = existingQty + quantity;
+    if (product.stock < requestedQty) throw createError(400, `Only ${product.stock} left in stock.`);
 
     const item = await CartModel.addOrUpdateItem(req.user.id, product_id, quantity, size, color);
     res.status(201).json({ message: 'Item added to cart.', item });
@@ -48,6 +51,7 @@ const updateCartItem = async (req, res, next) => {
     if (!product) throw createError(404, 'Product not found.');
     const availableStock = getVariantStock(product, size, color);
     if (availableStock < quantity) throw createError(400, `Only ${availableStock} left in stock.`);
+    if (product.stock < quantity) throw createError(400, `Only ${product.stock} left in stock.`);
 
     const item = await CartModel.updateItemQuantity(
       req.user.id,

@@ -27,6 +27,11 @@ END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS cart_items_cart_product_size_color_idx
   ON cart_items (cart_id, product_id, COALESCE(size, ''), COALESCE(color, ''));
+ALTER TABLE order_items
+  ADD COLUMN IF NOT EXISTS size VARCHAR(50);
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS size_stocks JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 DO $$
 BEGIN

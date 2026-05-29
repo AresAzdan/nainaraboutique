@@ -177,6 +177,7 @@ CREATE TABLE order_items (
   price      NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
   size       VARCHAR(50),
   color      TEXT
+  size       VARCHAR(50)
 );
 
 -- -------------------------
