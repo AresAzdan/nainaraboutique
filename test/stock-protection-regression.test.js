@@ -2,7 +2,9 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const {
+  applyResolvedStockDelta,
   getVariantStock,
+  resolveAvailableStock,
   validateOrderStock,
   validateRequestedStock,
 } = require('../src/utils/stockProtection');
@@ -121,6 +123,34 @@ const {
   };
 
   assert.strictEqual(
+    getVariantStock({ stock: 18, sizes: ['All Size'], size_stocks: { black: 1, ivory: 2 }, variant_stocks: {} }, 'All Size', 'black'),
+    1,
+    'one-size alias All Size must resolve selected color black from flat size_stocks.black'
+  );
+  assert.strictEqual(
+    getVariantStock({ stock: 18, sizes: ['One Size'], size_stocks: { black: 1, ivory: 2 }, variant_stocks: {} }, 'One Size', 'ivory'),
+    2,
+    'one-size alias One Size must resolve selected color ivory from flat size_stocks.ivory'
+  );
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 40, quantity: 2, size: 'All Size', color: 'black' }], new Map([
+      [40, { id: 40, name: 'Flat One Size', stock: 18, sizes: ['All Size'], size_stocks: { black: 1, ivory: 2 }, variant_stocks: {} }],
+    ])),
+    (err) => err.status === 400 && err.details.available === 1 && err.details.color === 'black' && err.details.size === 'All Size',
+    'backend validation must reject qty 2 for selected black one-size flat color stock of 1'
+  );
+  assert.strictEqual(
+    resolveAvailableStock({ stock: 0, sizes: ['All Size'], size_stocks: { black: 1, ivory: 2 }, variant_stocks: {} }, 'All Size', 'black').available,
+    1,
+    'per-color one-size map must be authoritative even when product.stock is zero'
+  );
+  assert.strictEqual(
+    getVariantStock({ stock: 9, sizes: ['S', 'M'], size_stocks: { black: 1 }, variant_stocks: {} }, 'S', 'black'),
+    0,
+    'multi-size products must not use flat color stock as a fallback for real size selections'
+  );
+
+  assert.strictEqual(
     getVariantStock(realFlatColorStockShape, '140cm', 'black'),
     1,
     'real flat color stock shape must resolve selected color black to stock 1 even when a one-size size is selected'
@@ -145,6 +175,20 @@ const {
     getVariantStock({ stock: 18, size_stocks: {}, variant_stocks: realFlatColorStockShape.size_stocks }, 'One Size', 'Peach:#FFA491'),
     1,
     'the same flat production color stock shape must also be supported when it is stored in variant_stocks'
+  );
+
+  const flatColorPaymentProduct = { stock: 0, sizes: ['All Size'], size_stocks: { black: 1, ivory: 2 }, variant_stocks: {} };
+  const flatColorDeduct = applyResolvedStockDelta(flatColorPaymentProduct, 'All Size', 'black', 'size_color', -1);
+  assert.deepStrictEqual(
+    flatColorDeduct,
+    { stocks: { black: 0, ivory: 2 }, updateVariantStocks: false, updateSizeStocks: true },
+    'payment settlement must decrement the matched flat color key for one-size products'
+  );
+  const flatColorRestore = applyResolvedStockDelta({ ...flatColorPaymentProduct, size_stocks: flatColorDeduct.stocks }, 'One Size', 'black', 'size_color', 1);
+  assert.deepStrictEqual(
+    flatColorRestore,
+    { stocks: { black: 1, ivory: 2 }, updateVariantStocks: false, updateSizeStocks: true },
+    'payment restoration must increment the matched flat color key for one-size products'
   );
 
   assert.throws(
@@ -189,9 +233,16 @@ const {
   }
 
   assert(
-    indexHtml.includes('const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey)')
+    indexHtml.includes('const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest })')
       && indexHtml.includes('if (this.hasStockMapEntries(variantStocks) || this.hasStockMapEntries(sizeStocks)) return 0'),
     'frontend stock resolution must read admin size_stocks color data and only fall back to product stock when no variant/size stock data exists'
+  );
+
+  assert(
+    indexHtml.includes("if (['allsize', 'onesize', 'freesize'].includes(alias)) return true")
+      && indexHtml.includes('const oneSizeRequest = this.isOneSizeRequest(product, sizeKey)')
+      && indexHtml.includes('allowFlatColorFallback: oneSizeRequest'),
+    'frontend stock resolution must treat one-size aliases as eligible for flat selected-color stock fallback'
   );
 
   assert(

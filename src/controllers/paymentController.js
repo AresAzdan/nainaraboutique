@@ -1,7 +1,7 @@
 const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
-const { colorLookupCandidates, findMatchingOwnKey, normalizeSizeStocks, normalizeVariantStocks, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
+const { applyResolvedStockDelta: buildResolvedStockDelta, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -125,88 +125,13 @@ const getOrderItemsForUpdate = async (client, orderId) => {
 
 const getProductForStockUpdate = async (client, productId) => {
   const { rows } = await client.query(
-    `SELECT id, name, stock, size_stocks, variant_stocks
+    `SELECT id, name, stock, sizes, size_stocks, variant_stocks
      FROM products
      WHERE id = $1
      FOR UPDATE`,
     [productId]
   );
   return rows[0] || null;
-};
-
-const applyNestedStockDelta = (stocks, outerKey, innerKey, delta) => {
-  const currentOuter = stocks[outerKey];
-  if (!currentOuter || typeof currentOuter !== 'object' || Array.isArray(currentOuter)) return stocks;
-  if (!Object.prototype.hasOwnProperty.call(currentOuter, innerKey)) return stocks;
-
-  const current = Number(currentOuter[innerKey]) || 0;
-  const next = current + delta;
-  if (next < 0) throw new Error(`Insufficient stock for ${outerKey} / ${innerKey}`);
-
-  return { ...stocks, [outerKey]: { ...currentOuter, [innerKey]: next } };
-};
-
-const applyFlatStockDelta = (stocks, key, delta) => {
-  if (!Object.prototype.hasOwnProperty.call(stocks, key)) return stocks;
-  const current = Number(stocks[key]) || 0;
-  const next = current + delta;
-  if (next < 0) throw new Error(`Insufficient stock for ${key}`);
-  return { ...stocks, [key]: next };
-};
-
-const applyMatchedFlatStockDelta = (stocks, candidates, delta) => {
-  const key = findMatchingOwnKey(stocks, candidates);
-  return key === null ? stocks : applyFlatStockDelta(stocks, key, delta);
-};
-
-const applyColorStockDelta = (stocks, size, color, delta) => {
-  const sizeKey = size || null;
-  const sizeKeys = [...new Set([sizeKey, 'default'].filter(Boolean))];
-  const colorKeys = colorLookupCandidates(color);
-
-  const outerColorKey = findMatchingOwnKey(stocks, colorKeys);
-  if (outerColorKey !== null) {
-    for (const key of sizeKeys) {
-      const nextStocks = applyNestedStockDelta(stocks, outerColorKey, key, delta);
-      if (nextStocks !== stocks) return nextStocks;
-    }
-  }
-
-  for (const colorKey of colorKeys) {
-    for (const key of sizeKeys) {
-      const nextStocks = applyMatchedFlatStockDelta(stocks, [`${colorKey}::${key}`], delta);
-      if (nextStocks !== stocks) return nextStocks;
-    }
-  }
-
-  const nextStocks = applyMatchedFlatStockDelta(stocks, colorKeys, delta);
-  if (nextStocks !== stocks) return nextStocks;
-
-  return stocks;
-};
-
-const applyVariantStockDelta = (product, size, color, delta) => {
-  const variantStocks = normalizeVariantStocks(product.variant_stocks);
-  return applyColorStockDelta(variantStocks, size, color, delta);
-};
-
-const applySizeStockDelta = (product, size, delta) => {
-  const sizeKey = size || 'default';
-  const sizeStocks = normalizeSizeStocks(product.size_stocks);
-  return applyFlatStockDelta(sizeStocks, sizeKey, delta);
-};
-
-const applyResolvedStockDelta = (product, size, color, source, delta) => {
-  if (source === 'variant') {
-    return { stocks: applyVariantStockDelta(product, size, color, delta), updateVariantStocks: true, updateSizeStocks: false };
-  }
-  if (source === 'size_color') {
-    return { stocks: applyColorStockDelta(normalizeSizeStocks(product.size_stocks), size, color, delta), updateVariantStocks: false, updateSizeStocks: true };
-  }
-  if (source === 'size') {
-    return { stocks: applySizeStockDelta(product, size, delta), updateVariantStocks: false, updateSizeStocks: true };
-  }
-  return { stocks: {}, updateVariantStocks: false, updateSizeStocks: false };
 };
 
 const deductOrderStock = async (client, orderId) => {
@@ -217,24 +142,23 @@ const deductOrderStock = async (client, orderId) => {
     if (!product) throw new Error(`Product ${item.product_id} not found while settling order ${orderId}`);
 
     const quantity = Number(item.quantity);
-    const productStock = Number(product.stock) || 0;
     const resolvedStock = resolveAvailableStock(product, item.size, item.color);
 
-    if (productStock < quantity || resolvedStock.available < quantity) {
+    if (resolvedStock.available < quantity) {
       throw new Error(
         `Insufficient stock while settling order ${orderId} for product ${item.product_id}`
       );
     }
 
-    const stockDelta = applyResolvedStockDelta(product, item.size, item.color, resolvedStock.source, -quantity);
+    const stockDelta = buildResolvedStockDelta(product, item.size, item.color, resolvedStock.source, -quantity);
     const { rows } = await client.query(
       `UPDATE products
-       SET stock = stock - $1,
+       SET stock = CASE WHEN $6::boolean THEN stock - $1 ELSE GREATEST(stock - $1, 0) END,
            size_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE size_stocks END,
            variant_stocks = CASE WHEN $5::boolean THEN $3::jsonb ELSE variant_stocks END
-       WHERE id = $2 AND stock >= $1
+       WHERE id = $2 AND ($6::boolean = false OR stock >= $1)
        RETURNING id, stock`,
-      [quantity, item.product_id, JSON.stringify(stockDelta.stocks), stockDelta.updateSizeStocks, stockDelta.updateVariantStocks]
+      [quantity, item.product_id, JSON.stringify(stockDelta.stocks), stockDelta.updateSizeStocks, stockDelta.updateVariantStocks, resolvedStock.source === 'product']
     );
 
     if (!rows.length) {
@@ -254,7 +178,7 @@ const restoreOrderStock = async (client, orderId) => {
 
     const quantity = Number(item.quantity);
     const resolvedStock = resolveAvailableStock(product, item.size, item.color);
-    const stockDelta = applyResolvedStockDelta(product, item.size, item.color, resolvedStock.source, quantity);
+    const stockDelta = buildResolvedStockDelta(product, item.size, item.color, resolvedStock.source, quantity);
 
     await client.query(
       `UPDATE products

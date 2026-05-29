@@ -13,6 +13,32 @@ function normalizeSize(value) {
   return normalizeText(value);
 }
 
+const ONE_SIZE_ALIASES = new Set(['allsize', 'onesize', 'freesize']);
+
+function normalizeSizeAlias(value) {
+  const text = normalizeSize(value);
+  return text ? text.toLowerCase().replace(/[\s_-]+/g, '') : null;
+}
+
+function isOneSizeAlias(value) {
+  const alias = normalizeSizeAlias(value);
+  if (!alias) return true;
+  if (ONE_SIZE_ALIASES.has(alias)) return true;
+  return /^\d+(?:\.\d+)?cm$/.test(alias);
+}
+
+function hasRealSizeOptions(product) {
+  const sizes = Array.isArray(product && product.sizes) ? product.sizes : [];
+  const normalizedSizes = sizes.map(normalizeSize).filter(Boolean);
+  return normalizedSizes.some(size => !isOneSizeAlias(size));
+}
+
+function isOneSizeRequest(product, size) {
+  const sizeKey = normalizeSize(size);
+  if (isOneSizeAlias(sizeKey)) return true;
+  return !hasRealSizeOptions(product);
+}
+
 function normalizeColor(value) {
   return normalizeText(value);
 }
@@ -102,7 +128,7 @@ function uniqueValues(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function getColorStockValue(stockMap, color, size) {
+function getColorStockValue(stockMap, color, size, { allowFlatColorFallback = true } = {}) {
   if (!stockMap || typeof stockMap !== 'object' || Array.isArray(stockMap)) return null;
 
   const colorKeys = colorLookupCandidates(color);
@@ -126,14 +152,16 @@ function getColorStockValue(stockMap, color, size) {
     }
   }
 
-  const flatColorStock = getStockValueForKey(stockMap, colorKeys);
-  if (flatColorStock !== null) return flatColorStock;
+  if (allowFlatColorFallback) {
+    const flatColorStock = getStockValueForKey(stockMap, colorKeys);
+    if (flatColorStock !== null) return flatColorStock;
+  }
 
   return null;
 }
 
-function getVariantStockValue(variantStocks, color, size) {
-  return getColorStockValue(variantStocks, color, size);
+function getVariantStockValue(variantStocks, color, size, options) {
+  return getColorStockValue(variantStocks, color, size, options);
 }
 
 function hasStockMapEntries(value) {
@@ -146,13 +174,15 @@ function resolveAvailableStock(product, size, color) {
   const variantStocks = normalizeVariantStocks(product && product.variant_stocks);
   const sizeStocks = normalizeSizeStocks(product && product.size_stocks);
 
+  const oneSizeRequest = isOneSizeRequest(product, sizeKey);
+
   if (colorKey) {
-    const variantStock = getVariantStockValue(variantStocks, colorKey, sizeKey);
+    const variantStock = getVariantStockValue(variantStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest });
     if (variantStock !== null) {
       return { available: variantStock, source: 'variant' };
     }
 
-    const colorSizeStock = getColorStockValue(sizeStocks, colorKey, sizeKey);
+    const colorSizeStock = getColorStockValue(sizeStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest });
     if (colorSizeStock !== null) {
       return { available: colorSizeStock, source: 'size_color' };
     }
@@ -175,6 +205,79 @@ function resolveAvailableStock(product, size, color) {
 
 function getVariantStock(product, size, color) {
   return resolveAvailableStock(product, size, color).available;
+}
+
+function applyNestedStockDelta(stocks, outerKey, innerKey, delta) {
+  const currentOuter = stocks[outerKey];
+  if (!currentOuter || typeof currentOuter !== 'object' || Array.isArray(currentOuter)) return stocks;
+  if (!Object.prototype.hasOwnProperty.call(currentOuter, innerKey)) return stocks;
+
+  const current = Number(currentOuter[innerKey]) || 0;
+  const next = current + delta;
+  if (next < 0) throw new Error(`Insufficient stock for ${outerKey} / ${innerKey}`);
+
+  return { ...stocks, [outerKey]: { ...currentOuter, [innerKey]: next } };
+}
+
+function applyFlatStockDelta(stocks, key, delta) {
+  if (!Object.prototype.hasOwnProperty.call(stocks, key)) return stocks;
+  const current = Number(stocks[key]) || 0;
+  const next = current + delta;
+  if (next < 0) throw new Error(`Insufficient stock for ${key}`);
+  return { ...stocks, [key]: next };
+}
+
+function applyMatchedFlatStockDelta(stocks, candidates, delta) {
+  const key = findMatchingOwnKey(stocks, candidates);
+  return key === null ? stocks : applyFlatStockDelta(stocks, key, delta);
+}
+
+function applyColorStockDelta(stocks, size, color, delta) {
+  const sizeKey = normalizeSize(size);
+  const sizeKeys = uniqueValues([sizeKey, 'default']);
+  const colorKeys = colorLookupCandidates(color);
+
+  const outerColorKey = findMatchingOwnKey(stocks, colorKeys);
+  if (outerColorKey !== null) {
+    for (const key of sizeKeys) {
+      const nextStocks = applyNestedStockDelta(stocks, outerColorKey, key, delta);
+      if (nextStocks !== stocks) return nextStocks;
+    }
+  }
+
+  for (const colorKey of colorKeys) {
+    for (const key of sizeKeys) {
+      const nextStocks = applyMatchedFlatStockDelta(stocks, [`${colorKey}::${key}`], delta);
+      if (nextStocks !== stocks) return nextStocks;
+    }
+  }
+
+  const nextStocks = applyMatchedFlatStockDelta(stocks, colorKeys, delta);
+  if (nextStocks !== stocks) return nextStocks;
+
+  return stocks;
+}
+
+function applyVariantStockDelta(product, size, color, delta) {
+  return applyColorStockDelta(normalizeVariantStocks(product && product.variant_stocks), size, color, delta);
+}
+
+function applySizeStockDelta(product, size, delta) {
+  const sizeKey = normalizeSize(size) || 'default';
+  return applyFlatStockDelta(normalizeSizeStocks(product && product.size_stocks), sizeKey, delta);
+}
+
+function applyResolvedStockDelta(product, size, color, source, delta) {
+  if (source === 'variant') {
+    return { stocks: applyVariantStockDelta(product, size, color, delta), updateVariantStocks: true, updateSizeStocks: false };
+  }
+  if (source === 'size_color') {
+    return { stocks: applyColorStockDelta(normalizeSizeStocks(product && product.size_stocks), size, color, delta), updateVariantStocks: false, updateSizeStocks: true };
+  }
+  if (source === 'size') {
+    return { stocks: applySizeStockDelta(product, size, delta), updateVariantStocks: false, updateSizeStocks: true };
+  }
+  return { stocks: {}, updateVariantStocks: false, updateSizeStocks: false };
 }
 
 function createStockError({ productId, productName, requested, available, size, color }) {
@@ -225,6 +328,7 @@ function validateRequestedStock(items, productSnapshots) {
   for (const [productId, requested] of byProduct.entries()) {
     const product = productSnapshots.get(productId);
     if (!product) continue;
+    if (hasStockMapEntries(product.variant_stocks) || hasStockMapEntries(product.size_stocks)) continue;
     const available = Number(product.stock) || 0;
     if (requested > available) {
       throw createStockError({
@@ -266,7 +370,7 @@ async function getStockSnapshots(items, queryable, { forUpdate = false } = {}) {
   if (!productIds.length) return new Map();
 
   const { rows } = await queryable.query(
-    `SELECT id, name, stock, size_stocks, variant_stocks
+    `SELECT id, name, stock, sizes, size_stocks, variant_stocks
      FROM products
      WHERE id = ANY($1::int[])
      ORDER BY id
@@ -278,6 +382,7 @@ async function getStockSnapshots(items, queryable, { forUpdate = false } = {}) {
     id: Number(row.id),
     name: row.name,
     stock: Number(row.stock) || 0,
+    sizes: Array.isArray(row.sizes) ? row.sizes : [],
     size_stocks: normalizeSizeStocks(row.size_stocks),
     variant_stocks: normalizeVariantStocks(row.variant_stocks),
   }]));
@@ -291,11 +396,15 @@ async function validateOrderStock(items, queryable, options = {}) {
 
 module.exports = {
   aggregateRequestedItems,
+  applyResolvedStockDelta,
   createStockError,
   colorLookupCandidates,
   findMatchingOwnKey,
   getStockSnapshots,
   getVariantStock,
+  hasRealSizeOptions,
+  isOneSizeAlias,
+  isOneSizeRequest,
   getVariantStockValue,
   normalizeColor,
   normalizeSize,
