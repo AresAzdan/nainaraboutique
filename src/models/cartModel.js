@@ -28,16 +28,6 @@ const CartModel = {
   },
 
   async getItemQuantity(userId, productId, size = null, color = null) {
-  async getItemQuantity(userId, productId) {
-    const cart = await this.getOrCreate(userId);
-    const { rows } = await db.query(
-      'SELECT quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2',
-      [cart.id, productId]
-    );
-    return Number(rows[0]?.quantity || 0);
-  },
-
-  async addOrUpdateItem(userId, productId, quantity) {
     const cart = await this.getOrCreate(userId);
     const { rows } = await db.query(
       `SELECT quantity FROM cart_items
