@@ -62,7 +62,8 @@ function getVariantStockValue(variantStocks, color, size) {
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
       for (const key of sizeKeys) {
         if (Object.prototype.hasOwnProperty.call(nested, key)) {
-          return normalizeStockValue(nested[key]);
+          const stock = normalizeStockValue(nested[key]);
+          if (stock !== null) return stock;
         }
       }
     }
@@ -72,42 +73,48 @@ function getVariantStockValue(variantStocks, color, size) {
     for (const key of sizeKeys) {
       const compositeKey = `${colorKey}::${key}`;
       if (Object.prototype.hasOwnProperty.call(variantStocks, compositeKey)) {
-        return normalizeStockValue(variantStocks[compositeKey]);
+        const stock = normalizeStockValue(variantStocks[compositeKey]);
+        if (stock !== null) return stock;
       }
     }
   }
 
   for (const colorKey of colorKeys) {
     if (!sizeKey && Object.prototype.hasOwnProperty.call(variantStocks, colorKey)) {
-      return normalizeStockValue(variantStocks[colorKey]);
+      const stock = normalizeStockValue(variantStocks[colorKey]);
+      if (stock !== null) return stock;
     }
   }
 
   return null;
 }
 
-function getVariantStock(product, size, color) {
-  const colorKey = normalizeColor(color);
+function resolveAvailableStock(product, size, color) {
   const sizeKey = normalizeSize(size);
+  const colorKey = normalizeColor(color);
   const variantStocks = normalizeVariantStocks(product && product.variant_stocks);
 
   if (colorKey) {
     const variantStock = getVariantStockValue(variantStocks, colorKey, sizeKey);
-    return variantStock === null ? 0 : variantStock;
-  }
-
-  if (Object.keys(variantStocks).length > 0) {
-    return 0;
+    if (variantStock !== null) {
+      return { available: variantStock, source: 'variant' };
+    }
   }
 
   const sizeStocks = normalizeSizeStocks(product && product.size_stocks);
   if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
     const stock = normalizeStockValue(sizeStocks[sizeKey]);
-    return stock === null ? 0 : stock;
+    if (stock !== null) {
+      return { available: stock, source: 'size' };
+    }
   }
 
   const stock = normalizeStockValue(product && product.stock);
-  return stock === null ? 0 : stock;
+  return { available: stock === null ? 0 : stock, source: 'product' };
+}
+
+function getVariantStock(product, size, color) {
+  return resolveAvailableStock(product, size, color).available;
 }
 
 function createStockError({ productId, productName, requested, available, size, color }) {
@@ -175,10 +182,7 @@ function validateRequestedStock(items, productSnapshots) {
     const product = productSnapshots.get(productId);
     if (!product) continue;
 
-    const hasVariantStocks = Object.keys(normalizeVariantStocks(product.variant_stocks)).length > 0;
-    const hasSizeStocks = Object.prototype.hasOwnProperty.call(normalizeSizeStocks(product.size_stocks), size);
-    if (!color && !size && !hasVariantStocks) continue;
-    if (!color && size && !hasVariantStocks && !hasSizeStocks) continue;
+    if (!color && !size) continue;
 
     const available = getVariantStock(product, size, color);
     if (quantity > available) {
@@ -236,6 +240,7 @@ module.exports = {
   normalizeSizeStocks,
   normalizeVariantStocks,
   parseColorToken,
+  resolveAvailableStock,
   validateOrderStock,
   validateRequestedStock,
 };

@@ -39,6 +39,31 @@ const {
     'legacy selected size stock can be used only when no color variant is selected'
   );
 
+
+  assert.strictEqual(
+    getVariantStock({ stock: 5, size_stocks: { S: 2 }, variant_stocks: {} }, 'S', 'Blue'),
+    2,
+    'selected color must fall back to legacy size stock when variant_stocks is empty'
+  );
+
+  assert.strictEqual(
+    getVariantStock({ stock: 5, size_stocks: { S: 2 }, variant_stocks: { Red: { S: 1 } } }, 'S', 'Blue'),
+    2,
+    'selected color must fall back to legacy size stock when variant_stocks does not contain that color'
+  );
+
+  assert.strictEqual(
+    getVariantStock({ stock: 5, size_stocks: {}, variant_stocks: { Red: { S: 1 } } }, 'S', 'Blue'),
+    5,
+    'selected color must fall back to product stock when no matching variant or size stock exists'
+  );
+
+  assert.strictEqual(
+    getVariantStock({ stock: 5, size_stocks: { S: 2 }, variant_stocks: { Blue: { S: 0 } } }, 'S', 'Blue'),
+    0,
+    'populated selected color-size variant stock of 0 must still be enforced'
+  );
+
   const colorSizeProduct = {
     id: 2,
     name: 'Variant Dress',
@@ -67,6 +92,19 @@ const {
     () => validateRequestedStock([{ product_id: 2, quantity: 1, size: 'XL', color: 'Color B' }], new Map([[2, colorSizeProduct]])),
     (err) => err.status === 400 && err.details.color === 'Color B' && err.details.size === 'XL' && err.details.available === 0,
     'backend must reject checkout for Color B + XL qty 1 when that color-size variant has 0 stock'
+  );
+
+
+  validateRequestedStock([{ product_id: 3, quantity: 2, size: 'S', color: 'Blue' }], new Map([
+    [3, { id: 3, name: 'Legacy Blue Dress', stock: 5, size_stocks: { S: 2 }, variant_stocks: { Red: { S: 1 } } }],
+  ]));
+
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 3, quantity: 3, size: 'S', color: 'Blue' }], new Map([
+      [3, { id: 3, name: 'Legacy Blue Dress', stock: 5, size_stocks: { S: 2 }, variant_stocks: { Red: { S: 1 } } }],
+    ])),
+    (err) => err.status === 400 && err.details.color === 'Blue' && err.details.size === 'S' && err.details.available === 2,
+    'backend validation must use size_stocks fallback when selected color has no variant_stocks entry'
   );
 
   const variantDb = {
@@ -101,6 +139,12 @@ const {
   for (const [, script] of inlineScripts) {
     assert.doesNotThrow(() => new Function(script), 'frontend inline scripts must parse without duplicate declarations or syntax errors');
   }
+
+  assert(
+    indexHtml.includes('if (variantStock !== null) return variantStock') && !indexHtml.includes('return variantStock === null ? 0 : variantStock'),
+    'frontend stock resolution must fall back instead of returning 0 when selected color has no variant stock entry'
+  );
+
   assert(
     indexHtml.includes('this.getAvailableStock(p, s, this.data.selectedColor)'),
     'product page size stock must use selected color + selected size'
