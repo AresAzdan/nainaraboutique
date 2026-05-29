@@ -4,6 +4,7 @@ const OrderModel = require('../models/orderModel');
 const ProductModel = require('../models/productModel');
 const { buildPricedOrderItems, calculateOrderTotal } = require('../utils/orderPricing');
 const { validateOrderStock } = require('../utils/stockProtection');
+const refundService = require('../services/refundService');
 
 // ─── Midtrans snap client ────────────────────────────────────────────────────
 const snap = new midtransClient.Snap({
@@ -449,6 +450,23 @@ exports.cancelOrder = async (req, res) => {
   }
 };
 
+
+// POST /orders/:id/refund-request — customer requests a refund without calling Midtrans
+exports.requestRefund = async (req, res) => {
+  try {
+    const order = await refundService.requestRefund({
+      orderId: req.params.id,
+      userId: req.user.id,
+      reason: req.body.reason,
+      refundAmount: req.body.refundAmount ?? req.body.refund_amount,
+    });
+    return res.status(201).json({ order });
+  } catch (err) {
+    console.error('[requestRefund]', err);
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Failed to request refund' });
+  }
+};
+
 // ─── Admin controllers ────────────────────────────────────────────────────────
 
 exports.getAllOrders = async (req, res) => {
@@ -482,6 +500,39 @@ exports.adminUpdateOrderStatus = async (req, res) => {
   } catch (err) {
     console.error('[adminUpdateOrderStatus]', err);
     return res.status(500).json({ message: 'Failed to update order status' });
+  }
+};
+
+
+exports.adminReviewRefund = async (req, res) => {
+  const action = String(req.body.action || '').toLowerCase();
+
+  try {
+    if (action === 'approve') {
+      const order = await refundService.approveRefund({
+        orderId: req.params.id,
+        adminId: req.user.id,
+      });
+      return res.json({ order });
+    }
+
+    if (action === 'reject') {
+      const order = await refundService.rejectRefund({
+        orderId: req.params.id,
+        adminId: req.user.id,
+        reason: req.body.reason,
+      });
+      return res.json({ order });
+    }
+
+    return res.status(400).json({ message: 'Refund action must be approve or reject' });
+  } catch (err) {
+    console.error('[adminReviewRefund]', err);
+    return res.status(err.status || 500).json({
+      message: err.status ? err.message : 'Failed to review refund',
+      midtransResponse: err.midtransResponse,
+      order: err.order,
+    });
   }
 };
 
