@@ -1292,9 +1292,19 @@
         }
 
         /* MODAL & TOAST */
-        .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: #fff; color: var(--text-color); padding: 14px 28px; border-radius: var(--radius); border: 1px solid #eee; box-shadow: 0 10px 30px rgba(0,0,0,0.1); opacity: 0; transition: all 0.4s ease; z-index: 2000; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 10px; pointer-events: none; width: max-content; max-width: 90%; text-align: center; }
+        .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: #fffdf8; color: var(--text-color); padding: 16px 18px; border-radius: 16px; border: 1px solid rgba(93,83,64,0.12); box-shadow: 0 18px 45px rgba(48,39,24,0.14); opacity: 0; transition: opacity 0.35s ease, transform 0.35s ease; z-index: 10000; font-size: 0.9rem; font-weight: 400; display: flex; align-items: flex-start; gap: 12px; pointer-events: none; width: min(420px, calc(100vw - 32px)); max-width: 90%; text-align: left; }
         .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-        .toast.toast--error { background: #fff5f5; border-color: rgba(214,64,69,0.25); color: #302718; box-shadow: 0 10px 30px rgba(214,64,69,0.12); }
+        .toast.toast--success { background: #fffdf8; border-color: rgba(75,132,89,0.22); box-shadow: 0 18px 45px rgba(75,132,89,0.14); }
+        .toast.toast--error { background: #fff8f6; border-color: rgba(214,64,69,0.25); box-shadow: 0 18px 45px rgba(214,64,69,0.12); }
+        .toast.toast--info { background: #fffdf8; border-color: rgba(93,83,64,0.18); box-shadow: 0 18px 45px rgba(48,39,24,0.12); }
+        .toast-icon { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; background: rgba(93,83,64,0.08); color: var(--text-color); margin-top: 1px; }
+        .toast--success .toast-icon { background: rgba(75,132,89,0.12); color: var(--success); }
+        .toast--error .toast-icon { background: rgba(214,64,69,0.10); color: #d64045; }
+        .toast--info .toast-icon { background: rgba(93,83,64,0.10); color: var(--accent-color); }
+        .toast-content { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .toast-title { font-family: var(--font-heading); font-size: 1rem; font-weight: 400; line-height: 1.25; color: var(--text-color); }
+        .toast-message { font-size: 0.86rem; line-height: 1.45; color: var(--secondary-text); }
+        @media (max-width: 600px) { .toast { bottom: 18px; width: calc(100vw - 28px); max-width: none; padding: 14px 16px; border-radius: 14px; } }
         
         .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(48, 39, 24, 0.4); backdrop-filter: blur(4px); z-index: 2000; display: none; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
@@ -4980,7 +4990,7 @@
                     </div>`;
                     document.body.insertAdjacentHTML('beforeend', modalHTML);
                 })
-                .catch(err => { alert('Failed to load order items: ' + err.message); });
+                .catch(err => { this.showToast('Failed to load order items: ' + err.message, 'error', 'Return Items Unavailable'); });
             },
 
             async submitReturn(orderId) {
@@ -4988,10 +4998,10 @@
                 const newSize = document.getElementById('return-new-size').value;
                 const videoUrl = document.getElementById('return-video-url').value.trim();
                 const reason = document.getElementById('return-reason').value.trim();
-                if (!itemId) { alert('Please select an item to return.'); return; }
-                if (!newSize) { alert('Please select a new size.'); return; }
-                if (!videoUrl) { alert('Please provide your unboxing video URL.'); return; }
-                if (!reason) { alert('Please provide a reason for the exchange.'); return; }
+                if (!itemId) { this.showToast('Please select an item to return.', 'info', 'Select an Item'); return; }
+                if (!newSize) { this.showToast('Please select a new size.', 'info', 'Select a Size'); return; }
+                if (!videoUrl) { this.showToast('Please provide your unboxing video URL.', 'info', 'Video URL Required'); return; }
+                if (!reason) { this.showToast('Please provide a reason for the exchange.', 'info', 'Reason Required'); return; }
                 const btn = document.getElementById('btn-submit-return');
                 btn.disabled = true;
                 btn.textContent = 'Submitting...';
@@ -5005,10 +5015,10 @@
                     const data = await res.json();
                     if (!res.ok) throw new Error(data.message);
                     document.getElementById('return-modal-overlay').remove();
-                    alert('Return request submitted successfully! We will review it soon.');
+                    this.showToast('Your return request has been received. Our team will review it shortly.', 'success', 'Return Request Submitted');
                     this.renderOrderDetail(orderId);
                 } catch (err) {
-                    alert('Failed to submit return: ' + err.message);
+                    this.showToast('Failed to submit return: ' + err.message, 'error', 'Return Request Failed');
                     btn.disabled = false;
                     btn.textContent = 'Submit Return Request';
                 }
@@ -5134,7 +5144,7 @@
                         if (!res.ok) throw new Error(data.message || "Failed to request refund.");
 
                         closeRefundModal();
-                        alert('Refund request submitted. We will review it shortly.');
+                        this.showToast('Your refund request has been received. Our team will review it shortly.', 'success', 'Refund Request Submitted');
                         this.renderOrderDetail(id);
                     } catch (err) {
                         errorEl.textContent = err.message || "An error occurred while requesting the refund.";
@@ -5868,20 +5878,33 @@
                 this.dom.badges.wishlist.textContent = this.data.wishlist.length;
                 this.dom.badges.wishlist.classList.toggle('hidden', this.data.wishlist.length===0);
             },
-            showToast(msg) { 
-                this.dom.toast.innerHTML = `<i class="fa-solid fa-check" style="color:var(--success)"></i> ${msg}`;
-                this.dom.toast.classList.add('show'); 
-                setTimeout(() => { this.dom.toast.classList.remove('show'); }, 2000); 
+            showToast(message, variant = null, title = '') {
+                const toast = this.dom.toast;
+                if (!toast) return;
+                const normalizedMessage = String(message || '');
+                const inferredVariant = /^(failed|error|could not|invalid)|not found|out of stock/i.test(normalizedMessage) ? 'error' : /^(please|cannot|no |name is required|passwords do not match|new password must)/i.test(normalizedMessage) ? 'info' : 'success';
+                const safeVariant = ['success', 'error', 'info'].includes(variant) ? variant : inferredVariant;
+                const iconClass = safeVariant === 'success' ? 'fa-check' : safeVariant === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-info';
+                const defaultTitle = safeVariant === 'success' ? 'Success' : safeVariant === 'error' ? 'Something Went Wrong' : 'Please Note';
+                toast.className = `toast toast--${safeVariant}`;
+                toast.setAttribute('role', safeVariant === 'error' ? 'alert' : 'status');
+                toast.setAttribute('aria-live', safeVariant === 'error' ? 'assertive' : 'polite');
+                toast.innerHTML = `
+                    <span class="toast-icon" aria-hidden="true"><i class="fa-solid ${iconClass}"></i></span>
+                    <span class="toast-content">
+                        <span class="toast-title"></span>
+                        <span class="toast-message"></span>
+                    </span>`;
+                toast.querySelector('.toast-title').textContent = title || defaultTitle;
+                toast.querySelector('.toast-message').textContent = normalizedMessage;
+                if (this._toastTimeout) clearTimeout(this._toastTimeout);
+                void toast.offsetWidth;
+                toast.classList.add('show');
+                this._toastTimeout = setTimeout(() => { toast.classList.remove('show'); }, safeVariant === 'error' ? 4200 : 3200);
             },
 
             showOutOfStockToast() {
-                this.dom.toast.innerHTML = `<i class="fa-solid fa-ban" style="color:#d64045"></i> Item out of stock`;
-                this.dom.toast.classList.remove('show');
-                void this.dom.toast.offsetWidth; // force reflow for re-animation
-                this.dom.toast.classList.add('show', 'toast--error');
-                setTimeout(() => {
-                    this.dom.toast.classList.remove('show', 'toast--error');
-                }, 2800);
+                this.showToast('This item is currently out of stock.', 'error', 'Item Out of Stock');
             },
             // ═══════════════════════════════════════════════════════════════
             // AUTH METHODS
