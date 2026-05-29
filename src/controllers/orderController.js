@@ -1,6 +1,8 @@
 const midtransClient = require('midtrans-client');
 const db = require('../config/db');
 const OrderModel = require('../models/orderModel');
+const ProductModel = require('../models/productModel');
+const { buildPricedOrderItems, calculateOrderTotal } = require('../utils/orderPricing');
 
 // ─── Midtrans snap client ────────────────────────────────────────────────────
 const snap = new midtransClient.Snap({
@@ -132,27 +134,15 @@ exports.createOrder = async (req, res) => {
     await client.query('BEGIN');
     console.log('[createOrder] ✔ DB transaction BEGIN');
 
-    const enrichedItems = await Promise.all(
-      items.map(async (item) => {
-        const { rows } = await client.query(
-          `SELECT name, price FROM products WHERE id = $1`,
-          [item.product_id]
-        );
-        const product = rows[0];
-        return {
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || item.product_name || null,
-        };
-      })
-    );
+    const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, client);
+    const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
     console.log('[createOrder] ✔ items enriched:', enrichedItems.length);
 
-    const totalAmount =
-      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
-      Number(shippingCost) -
-      Number(discountAmount);
+    const totalAmount = calculateOrderTotal({
+      items: enrichedItems,
+      shippingCost,
+      discountAmount,
+    });
 
     console.log('[createOrder] ✔ totalAmount:', totalAmount);
 
@@ -226,7 +216,7 @@ exports.createOrder = async (req, res) => {
     } catch (rbErr) {
       console.error('[createOrder] ✖ ROLLBACK itself failed:', rbErr);
     }
-    return res.status(500).json({ message: 'Failed to create order', error: err.message });
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Failed to create order', error: err.status ? undefined : err.message });
   } finally {
     if (client) {
       client.release();
@@ -246,32 +236,20 @@ exports._createOrderNoPool = async (req, res, params) => {
   } = params;
 
   try {
-    const enrichedItems = await Promise.all(
-      items.map(async (item) => {
-        const { rows } = await db.query(
-          `SELECT name, price FROM products WHERE id = $1`,
-          [item.product_id]
-        );
-        const product = rows[0];
-        return {
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || item.product_name || null,
-        };
-      })
-    );
+    const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, db);
+    const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
 
-    const totalAmount =
-      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
-      Number(shippingCost) -
-      Number(discountAmount);
+    const totalAmount = calculateOrderTotal({
+      items: enrichedItems,
+      shippingCost,
+      discountAmount,
+    });
 
     const order = await OrderModel.create({
       userId, totalAmount, items: enrichedItems,
       shippingCost, discountAmount, promoCode,
       shippingAddress, shippingMethod, phone, recipientName,
-    });
+    }, db);
 
     const midtransOrderId = `NAINARA-${Date.now()}`;
     console.log('[createOrder/noPool] ▶ calling snap.createTransaction for:', midtransOrderId);
@@ -312,7 +290,7 @@ exports._createOrderNoPool = async (req, res, params) => {
 
   } catch (err) {
     console.error('[createOrder/noPool] ✖ unexpected error:', err);
-    return res.status(500).json({ message: 'Failed to create order', error: err.message });
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Failed to create order', error: err.status ? undefined : err.message });
   }
 };
 
@@ -348,27 +326,19 @@ exports.createGuestOrder = async (req, res) => {
 
     if (client) await client.query('BEGIN');
 
-    const enrichedItems = await Promise.all(
-      items.map(async (item) => {
-        const { rows } = await q(`SELECT name, price FROM products WHERE id = $1`, [item.product_id]);
-        const product = rows[0];
-        return {
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price ?? product?.price ?? 0,
-          product_name: product?.name || item.product_name || null,
-        };
-      })
-    );
+    const queryable = client || db;
+    const pricingSnapshots = await ProductModel.getOrderPricingSnapshots(items, queryable);
+    const enrichedItems = buildPricedOrderItems(items, pricingSnapshots);
 
-    const totalAmount =
-      enrichedItems.reduce((sum, i) => sum + i.price * i.quantity, 0) +
-      Number(shippingCost) -
-      Number(discountAmount);
+    const totalAmount = calculateOrderTotal({
+      items: enrichedItems,
+      shippingCost,
+      discountAmount,
+    });
 
     const order = await OrderModel.create(
       { userId: null, totalAmount, items: enrichedItems, shippingCost, discountAmount, promoCode, shippingAddress, shippingMethod, phone, recipientName },
-      client || undefined
+      client || db
     );
 
     const midtransOrderId = `NAINARA-${Date.now()}`;
@@ -396,7 +366,7 @@ exports.createGuestOrder = async (req, res) => {
   } catch (err) {
     console.error('[createGuestOrder] ✖ unexpected error:', err);
     if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
-    return res.status(500).json({ message: 'Failed to create guest order', error: err.message });
+    return res.status(err.status || 500).json({ message: err.status ? err.message : 'Failed to create guest order', error: err.status ? undefined : err.message });
   } finally {
     if (client) client.release();
   }
