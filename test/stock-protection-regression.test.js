@@ -96,6 +96,11 @@ const {
   );
 
   const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const inlineScripts = [...indexHtml.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
+  assert(inlineScripts.length > 0, 'index.html must contain inline app scripts to parse');
+  for (const [, script] of inlineScripts) {
+    assert.doesNotThrow(() => new Function(script), 'frontend inline scripts must parse without duplicate declarations or syntax errors');
+  }
   assert(
     indexHtml.includes('this.getAvailableStock(p, s, this.data.selectedColor)'),
     'product page size stock must use selected color + selected size'
@@ -111,6 +116,10 @@ const {
   assert(
     indexHtml.includes('this.getAvailableStock(product, item.size, item.color)'),
     'cart quantity limit must use selected color + selected size stock'
+  );
+  assert(
+    indexHtml.includes('variant_stocks: item.variant_stocks') && indexHtml.includes('size_stocks: item.size_stocks'),
+    'API product loader must preserve variant_stocks and size_stocks for frontend stock checks'
   );
   assert(
     indexHtml.includes('plusDisabled = availableStock <= 0 || item.qty >= availableStock'),
