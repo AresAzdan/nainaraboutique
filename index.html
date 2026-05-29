@@ -3364,6 +3364,30 @@
                 return [...new Set(values.filter(Boolean))];
             },
 
+
+            normalizeSizeAlias(value) {
+                const text = value === undefined || value === null ? '' : String(value).trim();
+                return text && text !== 'null' ? text.toLowerCase().replace(/[\s_-]+/g, '') : null;
+            },
+
+            isOneSizeAlias(value) {
+                const alias = this.normalizeSizeAlias(value);
+                if (!alias) return true;
+                if (['allsize', 'onesize', 'freesize'].includes(alias)) return true;
+                return /^\d+(?:\.\d+)?cm$/.test(alias);
+            },
+
+            hasRealSizeOptions(product) {
+                const sizes = Array.isArray(product?.sizes) ? product.sizes : [];
+                return sizes.map(size => size && String(size).trim()).filter(Boolean).some(size => !this.isOneSizeAlias(size));
+            },
+
+            isOneSizeRequest(product, size) {
+                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
+                if (this.isOneSizeAlias(sizeKey)) return true;
+                return !this.hasRealSizeOptions(product);
+            },
+
             colorLookupCandidates(colorToken) {
                 const parsed = this.parseColorToken(colorToken);
                 if (!parsed.raw) return [];
@@ -3389,7 +3413,7 @@
                 return this.normalizeStockValue(map[key]);
             },
 
-            getColorStockFromMap(stockMap, color, size = null) {
+            getColorStockFromMap(stockMap, color, size = null, { allowFlatColorFallback = true } = {}) {
                 if (!stockMap || typeof stockMap !== 'object' || Array.isArray(stockMap)) return null;
                 const colorKeys = this.colorLookupCandidates(color);
                 if (!colorKeys.length) return null;
@@ -3412,13 +3436,15 @@
                     }
                 }
 
-                const flatColorStock = this.getStockValueForKeys(stockMap, colorKeys);
-                if (flatColorStock !== null) return flatColorStock;
+                if (allowFlatColorFallback) {
+                    const flatColorStock = this.getStockValueForKeys(stockMap, colorKeys);
+                    if (flatColorStock !== null) return flatColorStock;
+                }
                 return null;
             },
 
-            getVariantStockFromMap(variantStocks, color, size = null) {
-                return this.getColorStockFromMap(variantStocks, color, size);
+            getVariantStockFromMap(variantStocks, color, size = null, options = {}) {
+                return this.getColorStockFromMap(variantStocks, color, size, options);
             },
 
             hasStockMapEntries(value) {
@@ -3431,12 +3457,13 @@
                 const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
                 const variantStocks = product.variant_stocks && typeof product.variant_stocks === 'object' && !Array.isArray(product.variant_stocks) ? product.variant_stocks : {};
                 const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' && !Array.isArray(product.size_stocks) ? product.size_stocks : {};
+                const oneSizeRequest = this.isOneSizeRequest(product, sizeKey);
 
                 if (colorKey) {
-                    const variantStock = this.getVariantStockFromMap(variantStocks, colorKey, sizeKey);
+                    const variantStock = this.getVariantStockFromMap(variantStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest });
                     if (variantStock !== null) return variantStock;
 
-                    const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey);
+                    const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest });
                     if (colorSizeStock !== null) return colorSizeStock;
                 }
 
