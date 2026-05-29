@@ -3396,18 +3396,7 @@
                 }
                 const stock = this.normalizeStockValue(product.stock);
                 return stock === null ? 0 : stock;
-            getAvailableStock(product, size = null) {
-                if (!product) return 0;
-                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
-                const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' ? product.size_stocks : {};
-                if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
-                    const variantStock = Number(sizeStocks[sizeKey]);
-                    return Number.isFinite(variantStock) ? Math.max(0, Math.floor(variantStock)) : 0;
-                }
-                const stock = Number(product.stock);
-                return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0;
             },
-
             formatStockMessage(stock) {
                 const safeStock = Number.isFinite(Number(stock)) ? Math.max(0, Math.floor(Number(stock))) : 0;
                 if (safeStock <= 0) return 'Out of stock';
