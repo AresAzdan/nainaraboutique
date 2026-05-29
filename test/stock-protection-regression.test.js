@@ -54,8 +54,8 @@ const {
 
   assert.strictEqual(
     getVariantStock({ stock: 5, size_stocks: {}, variant_stocks: { Red: { S: 1 } } }, 'S', 'Blue'),
-    5,
-    'selected color must fall back to product stock when no matching variant or size stock exists'
+    0,
+    'selected color must not fall back to product stock when per-color stock data exists but has no matching color'
   );
 
   assert.strictEqual(
@@ -107,6 +107,54 @@ const {
     'backend validation must use size_stocks fallback when selected color has no variant_stocks entry'
   );
 
+
+
+  const realFlatColorStockShape = {
+    stock: 18,
+    size_stocks: {
+      black: 1,
+      ivory: 2,
+      '#000000': 2,
+      'Peach:#FFA491': 1,
+    },
+    variant_stocks: {},
+  };
+
+  assert.strictEqual(
+    getVariantStock(realFlatColorStockShape, '140cm', 'black'),
+    1,
+    'real flat color stock shape must resolve selected color black to stock 1 even when a one-size size is selected'
+  );
+  assert.strictEqual(
+    getVariantStock(realFlatColorStockShape, 'One Size', 'ivory'),
+    2,
+    'real flat color stock shape must resolve selected color ivory to stock 2'
+  );
+  assert.strictEqual(
+    getVariantStock(realFlatColorStockShape, '140cm', '#000000'),
+    2,
+    'real flat color stock shape must resolve selected hex color #000000 to stock 2'
+  );
+  assert.strictEqual(
+    getVariantStock(realFlatColorStockShape, 'One Size', 'Peach::#FFA491'),
+    1,
+    'real flat color stock shape must match selected combined Peach/#FFA491 color to stock 1'
+  );
+
+  assert.strictEqual(
+    getVariantStock({ stock: 18, size_stocks: {}, variant_stocks: realFlatColorStockShape.size_stocks }, 'One Size', 'Peach:#FFA491'),
+    1,
+    'the same flat production color stock shape must also be supported when it is stored in variant_stocks'
+  );
+
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 4, quantity: 2, size: '140cm', color: 'black' }], new Map([
+      [4, { id: 4, name: 'Real Shape Dress', ...realFlatColorStockShape }],
+    ])),
+    (err) => err.status === 400 && err.details.available === 1,
+    'checkout validation must reject cart quantities above the selected flat color stock'
+  );
+
   const variantDb = {
     async query() {
       return { rows: [colorSizeProduct] };
@@ -141,8 +189,9 @@ const {
   }
 
   assert(
-    indexHtml.includes('if (variantStock !== null) return variantStock') && !indexHtml.includes('return variantStock === null ? 0 : variantStock'),
-    'frontend stock resolution must fall back instead of returning 0 when selected color has no variant stock entry'
+    indexHtml.includes('const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey)')
+      && indexHtml.includes('if (this.hasStockMapEntries(variantStocks) || this.hasStockMapEntries(sizeStocks)) return 0'),
+    'frontend stock resolution must read admin size_stocks color data and only fall back to product stock when no variant/size stock data exists'
   );
 
   assert(
