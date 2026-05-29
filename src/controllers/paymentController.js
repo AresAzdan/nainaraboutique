@@ -1,6 +1,7 @@
 const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
+const { getVariantStock, normalizeSizeStocks, normalizeVariantStocks, parseColorToken, validateOrderStock } = require('../utils/stockProtection');
 const { getVariantStock, normalizeSizeStocks, validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ const FAILURE_STATUSES = ['cancelled', 'expired', 'failed'];
 
 const getOrderItemsForUpdate = async (client, orderId) => {
   const { rows } = await client.query(
+    `SELECT product_id, quantity, size, color
     `SELECT product_id, quantity, size
      FROM order_items
      WHERE order_id = $1
@@ -125,6 +127,7 @@ const getOrderItemsForUpdate = async (client, orderId) => {
 
 const getProductForStockUpdate = async (client, productId) => {
   const { rows } = await client.query(
+    `SELECT id, name, stock, size_stocks, variant_stocks
     `SELECT id, name, stock, size_stocks
      FROM products
      WHERE id = $1
@@ -134,6 +137,48 @@ const getProductForStockUpdate = async (client, productId) => {
   return rows[0] || null;
 };
 
+const applyNestedStockDelta = (stocks, outerKey, innerKey, delta) => {
+  const currentOuter = stocks[outerKey];
+  if (!currentOuter || typeof currentOuter !== 'object' || Array.isArray(currentOuter)) return stocks;
+  if (!Object.prototype.hasOwnProperty.call(currentOuter, innerKey)) return stocks;
+
+  const current = Number(currentOuter[innerKey]) || 0;
+  const next = current + delta;
+  if (next < 0) throw new Error(`Insufficient stock for ${outerKey} / ${innerKey}`);
+
+  return { ...stocks, [outerKey]: { ...currentOuter, [innerKey]: next } };
+};
+
+const applyFlatStockDelta = (stocks, key, delta) => {
+  if (!Object.prototype.hasOwnProperty.call(stocks, key)) return stocks;
+  const current = Number(stocks[key]) || 0;
+  const next = current + delta;
+  if (next < 0) throw new Error(`Insufficient stock for ${key}`);
+  return { ...stocks, [key]: next };
+};
+
+const applyVariantStockDelta = (product, size, color, delta) => {
+  const sizeKey = size || 'default';
+  if (color) {
+    const variantStocks = normalizeVariantStocks(product.variant_stocks);
+    const parsed = parseColorToken(color);
+    const colorKeys = [...new Set([parsed.raw, parsed.name].filter(Boolean))];
+
+    for (const colorKey of colorKeys) {
+      const nextVariantStocks = applyNestedStockDelta(variantStocks, colorKey, sizeKey, delta);
+      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
+    }
+
+    for (const colorKey of colorKeys) {
+      const nextVariantStocks = applyFlatStockDelta(variantStocks, `${colorKey}::${sizeKey}`, delta);
+      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
+    }
+
+    return variantStocks;
+  }
+
+  const sizeStocks = normalizeSizeStocks(product.size_stocks);
+  return applyFlatStockDelta(sizeStocks, sizeKey, delta);
 const applySizeStockDelta = (product, size, delta) => {
   const sizeStocks = normalizeSizeStocks(product.size_stocks);
   if (!size || !Object.prototype.hasOwnProperty.call(sizeStocks, size)) return sizeStocks;
@@ -156,6 +201,7 @@ const deductOrderStock = async (client, orderId) => {
 
     const quantity = Number(item.quantity);
     const productStock = Number(product.stock) || 0;
+    const variantStock = getVariantStock(product, item.size, item.color);
     const variantStock = getVariantStock(product, item.size);
 
     if (productStock < quantity || variantStock < quantity) {
@@ -164,6 +210,15 @@ const deductOrderStock = async (client, orderId) => {
       );
     }
 
+    const nextVariantOrSizeStocks = applyVariantStockDelta(product, item.size, item.color, -quantity);
+    const { rows } = await client.query(
+      `UPDATE products
+       SET stock = stock - $1,
+           size_stocks = CASE WHEN $4::boolean THEN size_stocks ELSE $3::jsonb END,
+           variant_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE variant_stocks END
+       WHERE id = $2 AND stock >= $1
+       RETURNING id, stock`,
+      [quantity, item.product_id, JSON.stringify(nextVariantOrSizeStocks), !!item.color]
     const nextSizeStocks = applySizeStockDelta(product, item.size, -quantity);
     const { rows } = await client.query(
       `UPDATE products
@@ -190,11 +245,16 @@ const restoreOrderStock = async (client, orderId) => {
     if (!product) continue;
 
     const quantity = Number(item.quantity);
+    const nextVariantOrSizeStocks = applyVariantStockDelta(product, item.size, item.color, quantity);
     const nextSizeStocks = applySizeStockDelta(product, item.size, quantity);
 
     await client.query(
       `UPDATE products
        SET stock = stock + $1,
+           size_stocks = CASE WHEN $4::boolean THEN size_stocks ELSE $3::jsonb END,
+           variant_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE variant_stocks END
+       WHERE id = $2`,
+      [quantity, item.product_id, JSON.stringify(nextVariantOrSizeStocks), !!item.color]
            size_stocks = $3::jsonb
        WHERE id = $2`,
       [quantity, item.product_id, JSON.stringify(nextSizeStocks)]

@@ -9,6 +9,7 @@ const {
 
 (async () => {
   const stockOneProduct = new Map([
+    [1, { id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {}, variant_stocks: {} }],
     [1, { id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {} }],
   ]);
 
@@ -21,6 +22,9 @@ const {
   const fakeDb = {
     async query(sql, values) {
       assert(sql.includes('FROM products'), 'stock validation must read authoritative products table');
+      assert(sql.includes('variant_stocks'), 'stock validation must read color + size variant stocks');
+      assert.deepStrictEqual(values, [[1]], 'stock validation should query requested product ids');
+      return { rows: [{ id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {}, variant_stocks: {} }] };
       assert.deepStrictEqual(values, [[1]], 'stock validation should query requested product ids');
       return { rows: [{ id: 1, name: 'Stock One Dress', stock: 1, size_stocks: {} }] };
     },
@@ -33,6 +37,51 @@ const {
   );
 
   assert.strictEqual(
+    getVariantStock({ stock: 5, size_stocks: { S: 1, M: 3 }, variant_stocks: {} }, 'S'),
+    1,
+    'legacy selected size stock can be used only when no color variant is selected'
+  );
+
+  const colorSizeProduct = {
+    id: 2,
+    name: 'Variant Dress',
+    stock: 4,
+    size_stocks: { XL: 4 },
+    variant_stocks: {
+      'Color A': { XL: 4 },
+      'Color B': { XL: 0 },
+    },
+  };
+
+  assert.strictEqual(
+    getVariantStock(colorSizeProduct, 'XL', 'Color A'),
+    4,
+    'Color A + XL must expose the specific color-size stock of 4'
+  );
+  assert.strictEqual(
+    getVariantStock(colorSizeProduct, 'XL', 'Color B'),
+    0,
+    'Color B + XL must expose the specific color-size stock of 0, not total product stock'
+  );
+
+  validateRequestedStock([{ product_id: 2, quantity: 4, size: 'XL', color: 'Color A' }], new Map([[2, colorSizeProduct]]));
+
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 2, quantity: 1, size: 'XL', color: 'Color B' }], new Map([[2, colorSizeProduct]])),
+    (err) => err.status === 400 && err.details.color === 'Color B' && err.details.size === 'XL' && err.details.available === 0,
+    'backend must reject checkout for Color B + XL qty 1 when that color-size variant has 0 stock'
+  );
+
+  const variantDb = {
+    async query() {
+      return { rows: [colorSizeProduct] };
+    },
+  };
+
+  await assert.rejects(
+    () => validateOrderStock([{ product_id: 2, quantity: 1, size: 'XL', color: 'Color B' }], variantDb),
+    (err) => err.status === 400 && err.code === 'INSUFFICIENT_STOCK',
+    'backend DB validation must reject Color B + XL qty 1'
     getVariantStock({ stock: 5, size_stocks: { S: 1, M: 3 } }, 'S'),
     1,
     'selected size stock must override product-level stock when size stock exists'
@@ -48,6 +97,20 @@ const {
 
   const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert(
+    indexHtml.includes('this.getAvailableStock(p, s, this.data.selectedColor)'),
+    'product page size stock must use selected color + selected size'
+  );
+  assert(
+    indexHtml.includes('this.updateProductStockUI(product)') && indexHtml.includes('this.data.selectedColor = colorName || null'),
+    'product page must refresh stock text when selected color changes'
+  );
+  assert(
+    indexHtml.includes('plusDisabled = availableStock <= 0 || item.qty >= availableStock'),
+    'cart + button must be disabled when quantity reaches selected variant stock'
+  );
+  assert(
+    indexHtml.includes('this.getAvailableStock(product, item.size, item.color)'),
+    'cart quantity limit must use selected color + selected size stock'
     indexHtml.includes('plusDisabled = availableStock <= 0 || item.qty >= availableStock'),
     'cart + button must be disabled when quantity reaches available stock'
   );

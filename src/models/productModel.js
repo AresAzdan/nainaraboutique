@@ -177,6 +177,7 @@ const ProductModel = {
         images:           imagesMap[row.id] || (row.image_url ? [row.image_url] : []),
         sizes:            row.sizes       || [],
         size_stocks:      row.size_stocks || {},
+        variant_stocks:   row.variant_stocks || {},
         color:            row.color       || '',
         weight:           row.weight      || 500,
         ...pricingFields,
@@ -215,6 +216,7 @@ const ProductModel = {
       images:           imagesMap[rows[0].id] || (rows[0].image_url ? [rows[0].image_url] : []),
       sizes:            rows[0].sizes       || [],
       size_stocks:      rows[0].size_stocks || {},
+      variant_stocks:   rows[0].variant_stocks || {},
       color:            rows[0].color       || '',
       weight:           rows[0].weight      || 500,
       ...pricingFields,
@@ -259,16 +261,16 @@ const ProductModel = {
     return snapshots;
   },
 
-  async create({ name, description, price, stock, image_url, category_id, images = [], color = '', weight = 500, sizes = [], size_stocks = {}, size_guide_id = null, size_guide_data = null, save_size_guide = false, size_guide_name = '' }) {
+  async create({ name, description, price, stock, image_url, category_id, images = [], color = '', weight = 500, sizes = [], size_stocks = {}, variant_stocks = {}, size_guide_id = null, size_guide_data = null, save_size_guide = false, size_guide_name = '' }) {
     const primaryImage = images[0] || image_url || null;
     const { sizeGuideId, sizeGuideData } = await this._resolveSizeGuideInput({ size_guide_id, size_guide_data, save_size_guide, size_guide_name });
 
     const { rows } = await db.query(
-      `INSERT INTO products (name, description, price, stock, image_url, category_id, color, weight, sizes, size_stocks, size_guide_id, size_guide_data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO products (name, description, price, stock, image_url, category_id, color, weight, sizes, size_stocks, variant_stocks, size_guide_id, size_guide_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [name, description, price, stock, primaryImage, category_id, color, weight,
-       JSON.stringify(sizes), JSON.stringify(size_stocks), sizeGuideId, sizeGuideData ? JSON.stringify(sizeGuideData) : null]
+       JSON.stringify(sizes), JSON.stringify(size_stocks), JSON.stringify(variant_stocks), sizeGuideId, sizeGuideData ? JSON.stringify(sizeGuideData) : null]
     );
     const product = rows[0];
 
@@ -280,6 +282,7 @@ const ProductModel = {
       images:      allImages,
       sizes:       product.sizes       || sizes,
       size_stocks: product.size_stocks || size_stocks,
+      variant_stocks: product.variant_stocks || variant_stocks,
       size_guide_id: product.size_guide_id || null,
       size_guide_data: product.size_guide_data || null,
       size_guide: this._buildSizeGuide(product),
@@ -301,6 +304,7 @@ const ProductModel = {
       weight:      rest.weight     !== undefined ? rest.weight : undefined,
       sizes:       rest.sizes      !== undefined ? JSON.stringify(rest.sizes)       : undefined,
       size_stocks: rest.size_stocks !== undefined ? JSON.stringify(rest.size_stocks) : undefined,
+      variant_stocks: rest.variant_stocks !== undefined ? JSON.stringify(rest.variant_stocks) : undefined,
     };
 
     if (rest.size_guide_id !== undefined || rest.size_guide_data !== undefined || rest.save_size_guide !== undefined) {
@@ -309,7 +313,7 @@ const ProductModel = {
       normalized.size_guide_data = sizeGuideData ? JSON.stringify(sizeGuideData) : null;
     }
 
-    const allowed = ['name', 'description', 'price', 'stock', 'image_url', 'category_id', 'color', 'weight', 'sizes', 'size_stocks', 'size_guide_id', 'size_guide_data'];
+    const allowed = ['name', 'description', 'price', 'stock', 'image_url', 'category_id', 'color', 'weight', 'sizes', 'size_stocks', 'variant_stocks', 'size_guide_id', 'size_guide_data'];
     const updates = [];
     const values  = [];
 
@@ -363,6 +367,7 @@ const ProductModel = {
       images:      imagesMap[product.id] || (product.image_url ? [product.image_url] : []),
       sizes:       product.sizes       || [],
       size_stocks: product.size_stocks || {},
+      variant_stocks: product.variant_stocks || {},
       color:       product.color       || '',
       weight:      product.weight      || 500,
       size_guide_id: product.size_guide_id || null,

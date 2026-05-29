@@ -3020,6 +3020,7 @@
                         : []);
                 // Normalise: if a value looks like a hex/rgb keep it, otherwise treat as CSS name
                 const colors = rawColors.length > 0 ? rawColors : [];
+                this.data.selectedColor = colors.length > 0 ? colors[0] : null;
 
                 
                 const recs = this.getRecommendedProducts(p);
@@ -3071,6 +3072,7 @@
                 const mainImage = displayImages[0] || 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
                 const currentPrice = this.getCurrentPrice(p);
                 const originalPrice = this.getOriginalPrice(p);
+                const selectedStock = this.getAvailableStock(p, this.data.selectedSize, this.data.selectedColor);
                 const selectedStock = this.getAvailableStock(p, this.data.selectedSize);
                 const selectedStockMessage = this.formatStockMessage(selectedStock);
 
@@ -3132,6 +3134,7 @@
                                 ${safeSizes.length > 0 ? `
                                 <div class="size-btn-group" id="detail-size-container">
                                     ${safeSizes.map(s => {
+                                        const sizeStock = this.getAvailableStock(p, s, this.data.selectedColor);
                                         const sizeStock = this.getAvailableStock(p, s);
                                         if (sizeStock <= 0) return `<div class="size-box disabled" title="Out of stock">${s}</div>`;
                                         const activeClass = s === this.data.selectedSize ? 'active' : '';
@@ -3143,6 +3146,7 @@
                             <div id="pd-stock-message" class="pd-stock-message${selectedStock <= 2 ? ' low' : ''}">${selectedStockMessage}</div>
 
                             <div class="action-btn-row">
+                                <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1, app.data.selectedColor)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
                                 <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
                                 <div class="btn-wishlist-modern" onclick="app.toggleWishlist(${p.id}, event)">
                                     <i class="${isWish ? 'fa-solid wishlist-icon-active' : 'fa-regular'} fa-heart"></i>
@@ -3347,6 +3351,53 @@
                 });
             },
 
+            normalizeStockValue(value) {
+                const stock = Number(value);
+                return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : null;
+            },
+
+            getVariantStockFromMap(variantStocks, color, size = null) {
+                const colorRaw = color && String(color).trim() !== 'null' ? String(color).trim() : null;
+                if (!colorRaw || !variantStocks || typeof variantStocks !== 'object' || Array.isArray(variantStocks)) return null;
+                const parsed = this.parseColorToken(colorRaw);
+                const colorKeys = [...new Set([colorRaw, parsed.name].filter(Boolean))];
+                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : 'default';
+
+                for (const colorKey of colorKeys) {
+                    const nested = variantStocks[colorKey];
+                    if (nested && typeof nested === 'object' && !Array.isArray(nested) && Object.prototype.hasOwnProperty.call(nested, sizeKey)) {
+                        return this.normalizeStockValue(nested[sizeKey]);
+                    }
+                }
+
+                for (const colorKey of colorKeys) {
+                    const compositeKey = `${colorKey}::${sizeKey}`;
+                    if (Object.prototype.hasOwnProperty.call(variantStocks, compositeKey)) {
+                        return this.normalizeStockValue(variantStocks[compositeKey]);
+                    }
+                }
+
+                return null;
+            },
+
+            getAvailableStock(product, size = null, color = null) {
+                if (!product) return 0;
+                const colorKey = color && String(color).trim() !== 'null' ? String(color).trim() : null;
+                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
+                const variantStocks = product.variant_stocks && typeof product.variant_stocks === 'object' ? product.variant_stocks : {};
+                if (colorKey) {
+                    const variantStock = this.getVariantStockFromMap(variantStocks, colorKey, sizeKey);
+                    return variantStock === null ? 0 : variantStock;
+                }
+                if (Object.keys(variantStocks).length > 0) return 0;
+
+                const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' ? product.size_stocks : {};
+                if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
+                    const variantStock = this.normalizeStockValue(sizeStocks[sizeKey]);
+                    return variantStock === null ? 0 : variantStock;
+                }
+                const stock = this.normalizeStockValue(product.stock);
+                return stock === null ? 0 : stock;
             getAvailableStock(product, size = null) {
                 if (!product) return 0;
                 const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
@@ -3368,6 +3419,7 @@
 
             updateProductStockUI(product) {
                 if (!product) return;
+                const stock = this.getAvailableStock(product, this.data.selectedSize, this.data.selectedColor);
                 const stock = this.getAvailableStock(product, this.data.selectedSize);
                 const message = document.getElementById('pd-stock-message');
                 if (message) {
@@ -3414,8 +3466,12 @@
             selectColor(el, colorName, index = 0) {
                 document.querySelectorAll('.color-circle').forEach(c => c.classList.remove('active'));
                 el.classList.add('active');
+                this.data.selectedColor = colorName || null;
                 const label = document.getElementById('selected-color-label');
                 if (label && colorName) label.textContent = this.displayColorName(colorName, index);
+                const productId = Number(new URLSearchParams((window.location.hash.split('?')[1] || '')).get('id'));
+                const product = this.data.products.find(x => Number(x.id) === productId);
+                this.updateProductStockUI(product);
             },
 
             escapeHTML(value) {
@@ -3526,7 +3582,7 @@
                 if(window.location.hash === '#wishlist') this.renderWishlist();
             },
 
-            async addToCart(id, size = null, event, qty = 1) {
+            async addToCart(id, size = null, event, qty = 1, color = null) {
                 // Require login
                 if (!this.getToken()) {
                     this.openLoginGate('Login atau buat akun untuk menambahkan produk ke keranjang.');
@@ -3535,6 +3591,10 @@
                 const p = this.data.products.find(x => x.id === id);
                 if (!p) return;
                 const normalizedSize = size || null;
+                const normalizedColor = color || null;
+                const colorLabel = normalizedColor ? this.displayColorName(normalizedColor) : null;
+                const availableStock = this.getAvailableStock(p, normalizedSize, normalizedColor);
+                const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize && (i.color || null) === normalizedColor);
                 const availableStock = this.getAvailableStock(p, normalizedSize);
                 const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize);
                 const currentQty = existingItem ? Number(existingItem.qty || 0) : 0;
@@ -3550,6 +3610,8 @@
                     this.data.cart.push({
                         id: p.id, name: p.name, price: this.getCurrentPrice(p), basePrice: this.getBasePrice(p), originalPrice: this.getOriginalPrice(p), qty: qty,
                         size: normalizedSize,
+                        color: normalizedColor,
+                        colorLabel,
                         stock: availableStock,
                         image_url: (p.images && p.images[0]) || '',
                         image: (p.images && p.images[0]) || ''
@@ -3580,50 +3642,6 @@
                 this.save(); this.showToast(this.t('addedToCart'));
             },
 
-            updateCartQty(id, size, change) {
-                const item = this.data.cart.find(i => i.id === id && i.size === size);
-                if (!item) return;
-                const newQty = item.qty + change;
-                if (newQty > 0) {
-                    item.qty = newQty;
-                    this.save(); this.renderCart(); this.updateBadges();
-                }
-            },
-
-            removeFromCart(id,) {
-                this.data.cart = this.data.cart.filter(i => i.id !== id);
-                this.save(); this.renderCart(); this.updateBadges();
-                this.renderCart();
-                this.updateBadges();
-
-            },
-
-            decreaseQty(id) {
-                const item = this.data.cart.find(i => i.id === id);
-                if (!item) return;
-        
-                if (item.qty > 1) {
-                   item.qty -= 1;
-                } else {
-                   this.data.cart = this.data.cart.filter(i => i.id !== id);
-                }
-
-                this.save();
-                this.renderCart();
-                this.updateBadges();
-            },
-
-            increaseQty(id) {
-                const item = this.data.cart.find(i => i.id === id);
-                if (!item) return;
-
-                item.qty += 1;
-
-                this.save();
-                this.renderCart();
-                this.updateBadges();
-            },
-
             async renderCart() {
                 const wrapper = document.getElementById('cart-content-wrapper');
                 // Guest-mode: render from local cart (no login required)
@@ -3632,6 +3650,9 @@
                     wrapper.innerHTML = `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;"><p style="color:var(--secondary-text); font-size:0.95rem;">${this.t('bagEmpty')}</p></div>`;
                     return;
                 }
+                const itemsHtml = items.map((item, index) => {
+                    const product = this.data.products.find(p => Number(p.id) === Number(item.id));
+                    const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
                 const itemsHtml = items.map(item => {
                     const product = this.data.products.find(p => Number(p.id) === Number(item.id));
                     const availableStock = product ? this.getAvailableStock(product, item.size) : Number(item.stock || 0);
@@ -3644,19 +3665,21 @@
                             <img src="${item.image_url || item.image || ''}" class="cart-item-img" alt="${item.name || 'Cart item'}" onerror="this.src='https://placehold.co/70x90/f0ede6/5D5340?text=No+Image'">
                             <div class="cart-item-details">
                                 <div class="cart-item-title">${item.name}</div>
+                                ${item.color ? `<div style="font-size:0.8rem;color:var(--secondary-text);margin-bottom:4px;">Color: ${item.colorLabel || this.displayColorName(item.color)}</div>` : ''}
                                 ${item.size && item.size !== 'null' ? `<div style="font-size:0.8rem;color:var(--secondary-text);margin-bottom:4px;">Size: ${item.size}</div>` : ''}
                                 <div class="cart-item-price-qty">
                                     <span class="cart-item-price">${this.formatMoney(parseFloat(item.price) * item.qty)}</span>
                                     <div class="qty-control">
-                                        <button onclick="app.decreaseQty(${item.id})">−</button>
+                                        <button onclick="app.decreaseCartItemQty(${index})">−</button>
                                         <span>${item.qty}</span>
+                                        <button onclick="app.increaseCartItemQty(${index})" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
                                         <button onclick="app.increaseQty(${item.id}, '${item.size || ''}')" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
                                     </div>
                                     ${plusDisabled ? `<div class="cart-stock-note">${this.formatStockMessage(availableStock)}</div>` : ''}
                                 </div>
                             </div>
                         </div>
-                        <button class="cart-remove-btn" onclick="app.removeFromCart(${item.id})"><i class="fa-solid fa-trash"></i></button>
+                        <button class="cart-remove-btn" onclick="app.removeCartItemAt(${index})"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 `;
                 }).join("");
@@ -3670,6 +3693,11 @@
                     </button>
                 `;
             },
+            increaseCartItemQty(index) {
+                const item = this.data.cart[index];
+                if (!item) return;
+                const product = this.data.products.find(p => Number(p.id) === Number(item.id));
+                const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
             increaseQty(productId, size = '') {
                 const normalizedSize = size || null;
                 const item = this.data.cart.find(i => i.id === productId && (i.size || null) === normalizedSize);
@@ -3685,11 +3713,26 @@
                 this.save(); this.renderCart(); this.updateBadges();
             },
 
-            decreaseQty(productId) {
-                const item = this.data.cart.find(i => i.id === productId);
+            decreaseCartItemQty(index) {
+                const item = this.data.cart[index];
                 if (!item) return;
-                if (item.qty > 1) { item.qty -= 1; } else { this.data.cart = this.data.cart.filter(i => i.id !== productId); }
+                if (item.qty > 1) { item.qty -= 1; } else { this.data.cart.splice(index, 1); }
                 this.save(); this.renderCart(); this.updateBadges();
+            },
+
+            removeCartItemAt(index) {
+                this.data.cart.splice(index, 1);
+                this.save(); this.renderCart(); this.updateBadges();
+            },
+
+            increaseQty(productId, size = '', color = '') {
+                const index = this.data.cart.findIndex(i => i.id === productId && (i.size || null) === (size || null) && (i.color || null) === (color || null));
+                if (index !== -1) this.increaseCartItemQty(index);
+            },
+
+            decreaseQty(productId) {
+                const index = this.data.cart.findIndex(i => i.id === productId);
+                if (index !== -1) this.decreaseCartItemQty(index);
             },
             removeFromCart(productId) {
                 this.data.cart = this.data.cart.filter(i => i.id !== productId);
@@ -4333,6 +4376,7 @@
                         image_url:    i.image_url || i.image || '',
                         quantity:     i.qty,
                         size:         i.size || '',
+                        color:        i.color || '',
                         price:        i.price
                     }))
                 };
@@ -5248,6 +5292,7 @@
                                 <div class="payment-item-name">${item.product_name || 'Product'}</div>
                                 <div class="payment-item-meta">
                                     Qty: ${item.quantity}<br>
+                                    ${item.color ? `Color: ${item.colorLabel || this.displayColorName(item.color)}<br>` : ''}
                                     ${item.size ? `Size: ${item.size}` : ''}
                                 </div>
                             </div>
@@ -5388,6 +5433,8 @@
                                 quantity:     i.quantity,
                                 price:        i.price,
                                 product_name: i.product_name || '',
+                                size:         i.size || '',
+                                color:        i.color || '',
                             })),
                         };
                     }
