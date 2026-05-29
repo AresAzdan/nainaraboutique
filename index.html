@@ -2909,6 +2909,8 @@
                         basePrice: parseFloat(item.base_price ?? item.price) || 0,
                         finalPrice: parseFloat(item.final_price ?? item.price) || 0,
                         stock: item.stock ?? 0,
+                        size_stocks: item.size_stocks && typeof item.size_stocks === 'object' ? item.size_stocks : {},
+                        variant_stocks: item.variant_stocks && typeof item.variant_stocks === 'object' ? item.variant_stocks : {},
                         images: (item.images && item.images.length > 0) ? item.images : (item.image_url ? [item.image_url] : [PLACEHOLDER]),
                         category: item.category_name || item.category || "Uncategorized",
                         color: (Array.isArray(item.colors) && item.colors.length > 0)
@@ -3145,7 +3147,6 @@
 
                             <div class="action-btn-row">
                                 <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1, app.data.selectedColor)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
-                                <button id="pd-add-cart-btn" class="btn-add-cart-modern${selectedStock <= 0 ? ' btn-add-cart-modern--disabled' : ''}" ${selectedStock <= 0 ? 'disabled' : `onclick="app.addToCart(${p.id}, app.data.selectedSize, event, 1)"`}>${selectedStock <= 0 ? 'Out of Stock' : this.t('addToCart')}</button>
                                 <div class="btn-wishlist-modern" onclick="app.toggleWishlist(${p.id}, event)">
                                     <i class="${isWish ? 'fa-solid wishlist-icon-active' : 'fa-regular'} fa-heart"></i>
                                 </div>
@@ -3407,7 +3408,6 @@
             updateProductStockUI(product) {
                 if (!product) return;
                 const stock = this.getAvailableStock(product, this.data.selectedSize, this.data.selectedColor);
-                const stock = this.getAvailableStock(product, this.data.selectedSize);
                 const message = document.getElementById('pd-stock-message');
                 if (message) {
                     message.textContent = this.formatStockMessage(stock);
@@ -3461,9 +3461,6 @@
                 this.updateProductStockUI(product);
             },
 
-            escapeHTML(value) {
-                return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[ch]));
-            },
 
             getProductSizeGuide(product) {
                 const guide = product?.size_guide || product?.size_guide_data;
@@ -3582,8 +3579,6 @@
                 const colorLabel = normalizedColor ? this.displayColorName(normalizedColor) : null;
                 const availableStock = this.getAvailableStock(p, normalizedSize, normalizedColor);
                 const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize && (i.color || null) === normalizedColor);
-                const availableStock = this.getAvailableStock(p, normalizedSize);
-                const existingItem = this.data.cart.find(i => i.id === id && i.size === normalizedSize);
                 const currentQty = existingItem ? Number(existingItem.qty || 0) : 0;
                 const nextQty = currentQty + qty;
                 if (nextQty > availableStock) {
@@ -3640,9 +3635,6 @@
                 const itemsHtml = items.map((item, index) => {
                     const product = this.data.products.find(p => Number(p.id) === Number(item.id));
                     const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
-                const itemsHtml = items.map(item => {
-                    const product = this.data.products.find(p => Number(p.id) === Number(item.id));
-                    const availableStock = product ? this.getAvailableStock(product, item.size) : Number(item.stock || 0);
                     item.stock = availableStock;
                     if (availableStock > 0 && item.qty > availableStock) item.qty = availableStock;
                     const plusDisabled = availableStock <= 0 || item.qty >= availableStock;
@@ -3660,7 +3652,6 @@
                                         <button onclick="app.decreaseCartItemQty(${index})">−</button>
                                         <span>${item.qty}</span>
                                         <button onclick="app.increaseCartItemQty(${index})" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
-                                        <button onclick="app.increaseQty(${item.id}, '${item.size || ''}')" ${plusDisabled ? 'disabled title="Maximum available stock reached"' : ''}>+</button>
                                     </div>
                                     ${plusDisabled ? `<div class="cart-stock-note">${this.formatStockMessage(availableStock)}</div>` : ''}
                                 </div>
@@ -3685,12 +3676,6 @@
                 if (!item) return;
                 const product = this.data.products.find(p => Number(p.id) === Number(item.id));
                 const availableStock = product ? this.getAvailableStock(product, item.size, item.color) : Number(item.stock || 0);
-            increaseQty(productId, size = '') {
-                const normalizedSize = size || null;
-                const item = this.data.cart.find(i => i.id === productId && (i.size || null) === normalizedSize);
-                if (!item) return;
-                const product = this.data.products.find(p => Number(p.id) === Number(productId));
-                const availableStock = product ? this.getAvailableStock(product, normalizedSize) : Number(item.stock || 0);
                 if (item.qty >= availableStock) {
                     this.showToast(this.formatStockMessage(availableStock));
                     return;
@@ -6004,6 +5989,8 @@
                             ? item.colors
                             : item.color || '',
                         stock: item.stock != null ? item.stock : 0,
+                        size_stocks: item.size_stocks && typeof item.size_stocks === 'object' ? item.size_stocks : {},
+                        variant_stocks: item.variant_stocks && typeof item.variant_stocks === 'object' ? item.variant_stocks : {},
                         status: item.status || null,
                         discount: item.discount || null,
                         sizes: Array.isArray(item.sizes) ? item.sizes : [],
