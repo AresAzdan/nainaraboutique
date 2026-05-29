@@ -133,7 +133,7 @@ const createProduct = async (req, res, next) => {
     const {
       name, description, price, stock,
       image_url, category_id, images,
-      color, weight, sizes, size_stocks,
+      color, weight, sizes, size_stocks, variant_stocks,
       size_guide_id, size_guide_data, save_size_guide, size_guide_name,
     } = req.body;
 
@@ -149,6 +149,7 @@ const createProduct = async (req, res, next) => {
       weight:      weight      || 500,
       sizes:       sizes       || [],
       size_stocks: size_stocks || {},
+      variant_stocks: variant_stocks || {},
       size_guide_id,
       size_guide_data,
       save_size_guide,

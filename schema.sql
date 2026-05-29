@@ -91,6 +91,11 @@ CREATE TABLE products (
   stock       INTEGER        NOT NULL DEFAULT 0 CHECK (stock >= 0),
   image_url   TEXT,
   category_id INTEGER        REFERENCES categories(id) ON DELETE SET NULL,
+  color       TEXT,
+  weight      INTEGER        NOT NULL DEFAULT 500,
+  sizes       JSONB          NOT NULL DEFAULT '[]'::jsonb,
+  size_stocks JSONB          NOT NULL DEFAULT '{}'::jsonb,
+  variant_stocks JSONB       NOT NULL DEFAULT '{}'::jsonb,
   size_guide_id INTEGER,
   size_guide_data JSONB,
   last_restocked_at TIMESTAMPTZ,
@@ -127,8 +132,13 @@ CREATE TABLE cart_items (
   cart_id    INTEGER     NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
   product_id INTEGER     NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   quantity   INTEGER     NOT NULL DEFAULT 1 CHECK (quantity > 0),
-  UNIQUE(cart_id, product_id)
+  size       VARCHAR(50),
+  color      TEXT,
+  UNIQUE(cart_id, product_id, size, color)
 );
+
+CREATE UNIQUE INDEX cart_items_cart_product_size_color_idx
+  ON cart_items (cart_id, product_id, COALESCE(size, ''), COALESCE(color, ''));
 
 -- -------------------------
 -- ORDERS
@@ -164,7 +174,9 @@ CREATE TABLE order_items (
   order_id   INTEGER        NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id INTEGER        NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
   quantity   INTEGER        NOT NULL CHECK (quantity > 0),
-  price      NUMERIC(10, 2) NOT NULL CHECK (price >= 0)
+  price      NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
+  size       VARCHAR(50),
+  color      TEXT
 );
 
 -- -------------------------

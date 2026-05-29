@@ -32,6 +32,8 @@ function buildPricedOrderItems(items, pricingSnapshots) {
       quantity,
       price: Number(snapshot.final_price),
       product_name: snapshot.name || item.product_name || null,
+      size: item.size || null,
+      color: item.color || null,
     };
   });
 }
