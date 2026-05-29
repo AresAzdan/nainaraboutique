@@ -144,6 +144,63 @@ const {
     1,
     'per-color one-size map must be authoritative even when product.stock is zero'
   );
+
+
+  const allSizePerColorProduct = { stock: 18, sizes: ['All Size'], size_stocks: { Red: 3, Blue: 2 }, variant_stocks: {} };
+  assert.strictEqual(
+    getVariantStock(allSizePerColorProduct, 'All Size', 'Red'),
+    3,
+    'All Size per-color stock must preserve explicit Red stock of 3'
+  );
+  assert.strictEqual(
+    getVariantStock(allSizePerColorProduct, null, 'Blue'),
+    2,
+    'All Size per-color stock must resolve explicit Blue stock of 2 even when no size is selected'
+  );
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 41, quantity: 4, color: 'Red' }], new Map([
+      [41, { id: 41, name: 'All Size Per Color', ...allSizePerColorProduct }],
+    ])),
+    (err) => err.status === 400 && err.details.available === 3 && err.details.color === 'Red',
+    'backend validation must keep enforcing explicit All Size per-color stock limits'
+  );
+
+  const allSizeSharedStockProduct = {
+    stock: 9,
+    sizes: ['All Size'],
+    size_stocks: { 'All Size': 1 },
+    variant_stocks: { 'Color 1::#FFFFFF': {} },
+  };
+  const sharedResolution = resolveAvailableStock(allSizeSharedStockProduct, null, 'Color 1 / #FFFFFF');
+  assert.deepStrictEqual(
+    sharedResolution,
+    { available: 1, source: 'size' },
+    'All Size single shared stock must fall back to the All Size key when selected color has no explicit stock'
+  );
+  validateRequestedStock([{ product_id: 42, quantity: 1, color: 'Color 1 / #FFFFFF' }], new Map([
+    [42, { id: 42, name: 'All Size Shared Stock', ...allSizeSharedStockProduct }],
+  ]));
+  assert.throws(
+    () => validateRequestedStock([{ product_id: 42, quantity: 2, color: 'Color 1 / #FFFFFF' }], new Map([
+      [42, { id: 42, name: 'All Size Shared Stock', ...allSizeSharedStockProduct }],
+    ])),
+    (err) => err.status === 400 && err.details.available === 1 && err.details.color === 'Color 1 / #FFFFFF',
+    'backend validation must cap All Size shared stock quantities at the shared stock value'
+  );
+
+  const sharedDeduct = applyResolvedStockDelta(allSizeSharedStockProduct, null, 'Color 1 / #FFFFFF', sharedResolution.source, -1);
+  assert.deepStrictEqual(
+    sharedDeduct,
+    { stocks: { 'All Size': 0 }, updateVariantStocks: false, updateSizeStocks: true },
+    'payment settlement must decrement shared All Size stock when no explicit color stock exists'
+  );
+  const sharedRestore = applyResolvedStockDelta({ ...allSizeSharedStockProduct, size_stocks: sharedDeduct.stocks }, null, 'Color 1 / #FFFFFF', 'size', 1);
+  assert.deepStrictEqual(
+    sharedRestore,
+    { stocks: { 'All Size': 1 }, updateVariantStocks: false, updateSizeStocks: true },
+    'payment restoration must restore shared All Size stock when no explicit color stock exists'
+  );
+
   assert.strictEqual(
     getVariantStock({ stock: 9, sizes: ['S', 'M'], size_stocks: { black: 1 }, variant_stocks: {} }, 'S', 'black'),
     0,
@@ -234,6 +291,7 @@ const {
 
   assert(
     indexHtml.includes('const colorSizeStock = this.getColorStockFromMap(sizeStocks, colorKey, sizeKey, { allowFlatColorFallback: oneSizeRequest })')
+      && indexHtml.includes('const sharedOneSizeStock = this.getSharedOneSizeStockFromMap(sizeStocks)')
       && indexHtml.includes('if (this.hasStockMapEntries(variantStocks) || this.hasStockMapEntries(sizeStocks)) return 0'),
     'frontend stock resolution must read admin size_stocks color data and only fall back to product stock when no variant/size stock data exists'
   );

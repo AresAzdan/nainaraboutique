@@ -3370,6 +3370,8 @@
                 return text && text !== 'null' ? text.toLowerCase().replace(/[\s_-]+/g, '') : null;
             },
 
+            sharedOneSizeStockKeys: ['All Size', 'One Size', 'Free Size', 'AllSize', 'OneSize', 'FreeSize', 'all_size', 'one_size', 'free_size', 'default'],
+
             isOneSizeAlias(value) {
                 const alias = this.normalizeSizeAlias(value);
                 if (!alias) return true;
@@ -3385,6 +3387,7 @@
             isOneSizeRequest(product, size) {
                 const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
                 if (this.isOneSizeAlias(sizeKey)) return true;
+                if (sizeKey) return false;
                 return !this.hasRealSizeOptions(product);
             },
 
@@ -3451,6 +3454,10 @@
                 return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
             },
 
+            getSharedOneSizeStockFromMap(sizeStocks) {
+                return this.getStockValueForKeys(sizeStocks, this.sharedOneSizeStockKeys);
+            },
+
             getAvailableStock(product, size = null, color = null) {
                 if (!product) return 0;
                 const colorKey = color && String(color).trim() !== 'null' ? String(color).trim() : null;
@@ -3470,6 +3477,14 @@
                 if (sizeKey) {
                     const sizeStock = this.getStockValueForKeys(sizeStocks, [sizeKey]);
                     if (sizeStock !== null) return sizeStock;
+                }
+
+                if (oneSizeRequest) {
+                    const sharedOneSizeStock = this.getSharedOneSizeStockFromMap(sizeStocks);
+                    if (sharedOneSizeStock !== null) return sharedOneSizeStock;
+
+                    const stock = this.normalizeStockValue(product.stock);
+                    return stock === null ? 0 : stock;
                 }
 
                 if (this.hasStockMapEntries(variantStocks) || this.hasStockMapEntries(sizeStocks)) return 0;

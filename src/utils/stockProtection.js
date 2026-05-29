@@ -14,6 +14,18 @@ function normalizeSize(value) {
 }
 
 const ONE_SIZE_ALIASES = new Set(['allsize', 'onesize', 'freesize']);
+const SHARED_ONE_SIZE_STOCK_KEYS = [
+  'All Size',
+  'One Size',
+  'Free Size',
+  'AllSize',
+  'OneSize',
+  'FreeSize',
+  'all_size',
+  'one_size',
+  'free_size',
+  'default',
+];
 
 function normalizeSizeAlias(value) {
   const text = normalizeSize(value);
@@ -36,6 +48,7 @@ function hasRealSizeOptions(product) {
 function isOneSizeRequest(product, size) {
   const sizeKey = normalizeSize(size);
   if (isOneSizeAlias(sizeKey)) return true;
+  if (sizeKey) return false;
   return !hasRealSizeOptions(product);
 }
 
@@ -168,6 +181,10 @@ function hasStockMapEntries(value) {
   return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
 }
 
+function getSharedOneSizeStockValue(sizeStocks) {
+  return getStockValueForKey(sizeStocks, SHARED_ONE_SIZE_STOCK_KEYS);
+}
+
 function resolveAvailableStock(product, size, color) {
   const sizeKey = normalizeSize(size);
   const colorKey = normalizeColor(color);
@@ -193,6 +210,16 @@ function resolveAvailableStock(product, size, color) {
     if (stock !== null) {
       return { available: stock, source: 'size' };
     }
+  }
+
+  if (oneSizeRequest) {
+    const sharedOneSizeStock = getSharedOneSizeStockValue(sizeStocks);
+    if (sharedOneSizeStock !== null) {
+      return { available: sharedOneSizeStock, source: 'size' };
+    }
+
+    const stock = normalizeStockValue(product && product.stock);
+    return { available: stock === null ? 0 : stock, source: 'product' };
   }
 
   if (hasStockMapEntries(variantStocks) || hasStockMapEntries(sizeStocks)) {
@@ -263,8 +290,13 @@ function applyVariantStockDelta(product, size, color, delta) {
 }
 
 function applySizeStockDelta(product, size, delta) {
-  const sizeKey = normalizeSize(size) || 'default';
-  return applyFlatStockDelta(normalizeSizeStocks(product && product.size_stocks), sizeKey, delta);
+  const stocks = normalizeSizeStocks(product && product.size_stocks);
+  const sizeKey = normalizeSize(size);
+  const sizeDelta = sizeKey ? applyMatchedFlatStockDelta(stocks, [sizeKey], delta) : stocks;
+  if (sizeDelta !== stocks) return sizeDelta;
+  const sharedDelta = applyMatchedFlatStockDelta(stocks, SHARED_ONE_SIZE_STOCK_KEYS, delta);
+  if (sharedDelta !== stocks) return sharedDelta;
+  return applyFlatStockDelta(stocks, 'default', delta);
 }
 
 function applyResolvedStockDelta(product, size, color, source, delta) {
@@ -405,6 +437,7 @@ module.exports = {
   hasRealSizeOptions,
   isOneSizeAlias,
   isOneSizeRequest,
+  getSharedOneSizeStockValue,
   getVariantStockValue,
   normalizeColor,
   normalizeSize,
