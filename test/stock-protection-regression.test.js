@@ -82,6 +82,8 @@ const {
     () => validateOrderStock([{ product_id: 2, quantity: 1, size: 'XL', color: 'Color B' }], variantDb),
     (err) => err.status === 400 && err.code === 'INSUFFICIENT_STOCK',
     'backend DB validation must reject Color B + XL qty 1'
+    );
+  assert.strictEqual(
     getVariantStock({ stock: 5, size_stocks: { S: 1, M: 3 } }, 'S'),
     1,
     'selected size stock must override product-level stock when size stock exists'
