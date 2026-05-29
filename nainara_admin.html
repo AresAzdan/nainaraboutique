@@ -403,21 +403,34 @@
         .toast {
             position: fixed;
             bottom: 24px; right: 24px;
-            background-color: #333;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
+            background: #fffdf8;
+            color: var(--primary);
+            padding: 14px 18px;
+            border-radius: 16px;
+            border: 1px solid rgba(70,62,49,0.12);
             font-size: 14px;
             opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s ease;
+            transform: translateY(18px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
             z-index: 1000;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            width: min(390px, calc(100vw - 32px));
+            box-shadow: 0 18px 45px rgba(45,40,32,0.14);
+            pointer-events: none;
         }
         .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.toast--success { border-color: rgba(16,185,129,0.22); box-shadow: 0 18px 45px rgba(16,185,129,0.12); }
+        .toast.toast--error { background: #fff8f6; border-color: rgba(239,68,68,0.24); box-shadow: 0 18px 45px rgba(239,68,68,0.12); }
+        .toast.toast--info { border-color: rgba(70,62,49,0.16); }
+        .toast-icon { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; background: rgba(70,62,49,0.08); color: var(--primary); }
+        .toast--success .toast-icon { background: rgba(16,185,129,0.12); color: var(--success); }
+        .toast--error .toast-icon { background: rgba(239,68,68,0.10); color: var(--danger); }
+        .toast-content { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+        .toast-title { font-weight: 700; line-height: 1.25; color: var(--primary); }
+        .toast-message { color: var(--text-muted); line-height: 1.4; }
+        @media (max-width: 640px) { .toast { right: 16px; bottom: 16px; width: calc(100vw - 32px); border-radius: 14px; } }
 
         .modal-overlay {
             position: fixed;
@@ -3673,9 +3686,9 @@
             const expiry=noExpiry?null:document.getElementById('coupon-expiry').value||null;
             const scope=document.getElementById('coupon-scope').value;
             const productIds=scope==='product'?this._selectedProductIds:[];
-            if (!code||isNaN(discountPct)||discountPct<=0) { alert('Please fill in Code and Discount Value.'); return; }
-            if (discountPct<1||discountPct>100) { alert('Discount must be between 1 and 100%.'); return; }
-            if (scope==='product' && productIds.length===0) { alert('Please select at least one product for this coupon.'); return; }
+            if (!code||isNaN(discountPct)||discountPct<=0) { this.showToast('Please fill in Code and Discount Value.', 'info', 'Coupon Details Required'); return; }
+            if (discountPct<1||discountPct>100) { this.showToast('Discount must be between 1 and 100%.', 'info', 'Invalid Discount'); return; }
+            if (scope==='product' && productIds.length===0) { this.showToast('Please select at least one product for this coupon.', 'info', 'Select a Product'); return; }
             const payload={code, discount_pct:discountPct, max_uses:maxUses, max_uses_per_user:1, expires_at:expiry, applies_to_all: scope!=='product', product_ids: productIds, product_id: productIds[0]||null};
             try {
                 const url=this._editingCouponId?`/api/admin/promo-codes/${this._editingCouponId}`:'/api/admin/promo-codes';
@@ -3683,7 +3696,7 @@
                 await apiFetch(url,{method,body:JSON.stringify(payload)});
                 this.closeCouponModal();
                 this.renderCoupons();
-            } catch(err) { alert('Error: '+err.message); }
+            } catch(err) { this.showToast(err.message, 'error', 'Coupon Error'); }
         },
 
         editCoupon: function(id) { this.openCouponModal(id); },
@@ -3693,7 +3706,7 @@
             try {
                 await apiFetch(`/api/admin/promo-codes/${id}`,{method:'DELETE'});
                 this.renderCoupons();
-            } catch(err) { alert('Error: '+err.message); }
+            } catch(err) { this.showToast(err.message, 'error', 'Delete Coupon Failed'); }
         },
 
         renderDiscounts: function() {
@@ -4286,11 +4299,24 @@ renderProductSelector: function() {
         },
         // ── END DELETE ORDER FEATURE ───────────────────────────────────
 
-        showToast: function(message) {
+        showToast: function(message, variant = null, title = '') {
             const toast=document.getElementById('toast');
-            toast.innerHTML=message; toast.classList.add('show');
+            if (!toast) return;
+            const normalizedMessage=String(message||'').replace(/^[✅⚠️📄⏳⚡🗑️]+\s*/u,'');
+            const inferredVariant=/^⚠️/.test(String(message||''))||/^(failed|error|delete failed|image upload failed|hero upload failed|highlight upload failed)/i.test(normalizedMessage)?'error':/^✅/.test(String(message||''))||/^(saved|settings saved|restored|csv exported|product|category|stock updated|order updated|order shipped|homepage saved|return request|refund)/i.test(normalizedMessage)?'success':'info';
+            const safeVariant=['success','error','info'].includes(variant)?variant:inferredVariant;
+            const iconClass=safeVariant==='success'?'ph-check':safeVariant==='error'?'ph-warning':'ph-info';
+            const defaultTitle=safeVariant==='success'?'Success':safeVariant==='error'?'Something Went Wrong':'Please Note';
+            toast.className=`toast toast--${safeVariant}`;
+            toast.setAttribute('role', safeVariant==='error'?'alert':'status');
+            toast.setAttribute('aria-live', safeVariant==='error'?'assertive':'polite');
+            toast.innerHTML=`<span class="toast-icon" aria-hidden="true"><i class="ph ${iconClass}"></i></span><span class="toast-content"><span class="toast-title"></span><span class="toast-message"></span></span>`;
+            toast.querySelector('.toast-title').textContent=title||defaultTitle;
+            toast.querySelector('.toast-message').textContent=normalizedMessage;
             if (this.undoTimeout) clearTimeout(this.undoTimeout);
-            this.undoTimeout=setTimeout(()=>{toast.classList.remove('show');},3500);
+            void toast.offsetWidth;
+            toast.classList.add('show');
+            this.undoTimeout=setTimeout(()=>{toast.classList.remove('show');},safeVariant==='error'?4200:3500);
         }
             
     };
