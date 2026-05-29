@@ -519,35 +519,10 @@ exports.adminDeleteOrder = async (req, res) => {
   }
 };
 
-// POST /orders/midtrans/notification  — Midtrans webhook (public)
-exports.midtransNotification = async (req, res) => {
-  try {
-    const notification = await snap.transaction.notification(req.body);
-    const {
-      order_id: midtransOrderId,
-      transaction_status: transactionStatus,
-      fraud_status: fraudStatus,
-    } = notification;
-
-    console.log('[midtransNotification] received:', { midtransOrderId, transactionStatus, fraudStatus });
-
-    const dbOrderId = await resolveOrderId(midtransOrderId);
-    if (!dbOrderId) {
-      console.error('[midtransNotification] Could not resolve DB id for:', midtransOrderId);
-      return res.status(200).json({ message: 'Order not found, skipping' });
-    }
-
-    const newStatus = mapMidtransStatus(transactionStatus, fraudStatus);
-    console.log(`[midtransNotification] Updating order #${dbOrderId} → "${newStatus}"`);
-
-    const updated = await OrderModel.updateStatus(dbOrderId, newStatus);
-    if (!updated) {
-      console.warn('[midtransNotification] updateStatus returned null for id:', dbOrderId);
-    }
-
-    return res.status(200).json({ message: 'OK', orderId: dbOrderId, status: newStatus });
-  } catch (err) {
-    console.error('[midtransNotification] error:', err);
-    return res.status(200).json({ message: 'Webhook processing error' });
-  }
+// POST /orders/midtrans/notification  — legacy Midtrans webhook alias (public)
+// Keep this export for backwards compatibility, but delegate to the canonical
+// payment webhook so all payment status and inventory rules stay in one place.
+exports.midtransNotification = async (req, res, next) => {
+  const { handleNotification } = require('./paymentController');
+  return handleNotification(req, res, next);
 };

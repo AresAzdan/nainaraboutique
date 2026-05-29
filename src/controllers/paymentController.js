@@ -65,11 +65,12 @@ const resolveOrderStatus = (transactionStatus, fraudStatus) => {
       return 'paid';
 
     case 'capture':
-      // Only mark as paid if fraud check passed
+      // Midtrans documents capture as a successful card payment when fraud_status
+      // is accept. Challenge/deny must not reduce stock or mark the order paid.
       return fraudStatus === 'accept' ? 'paid' : 'failed';
 
     case 'pending':
-      return null; // no change needed
+      return null; // never reduce stock or mark sold while the customer can still abandon payment
 
     case 'cancel':
       return 'cancelled';
@@ -78,16 +79,138 @@ const resolveOrderStatus = (transactionStatus, fraudStatus) => {
       return 'expired';
 
     case 'deny':
+    case 'failure':
       return 'failed';
+
+    case 'refund':
+    case 'partial_refund':
+      return 'refunded';
+
+    case 'chargeback':
+    case 'partial_chargeback':
+      return 'chargeback';
 
     default:
       return null; // unknown status — ignore safely
   }
 };
 
+const TERMINAL_STATUSES = [
+  'paid',
+  'cancelled',
+  'expired',
+  'failed',
+  'refunded',
+  'chargeback',
+  'completed',
+];
+
+const FAILURE_STATUSES = ['cancelled', 'expired', 'failed'];
+
+const getOrderItemsForUpdate = async (client, orderId) => {
+  const { rows } = await client.query(
+    `SELECT product_id, quantity
+     FROM order_items
+     WHERE order_id = $1
+     ORDER BY product_id
+     FOR UPDATE`,
+    [orderId]
+  );
+  return rows;
+};
+
+const deductOrderStock = async (client, orderId) => {
+  const items = await getOrderItemsForUpdate(client, orderId);
+
+  for (const item of items) {
+    const { rows } = await client.query(
+      `UPDATE products
+       SET stock = stock - $1
+       WHERE id = $2 AND stock >= $1
+       RETURNING id, stock`,
+      [item.quantity, item.product_id]
+    );
+
+    if (!rows.length) {
+      throw new Error(
+        `Insufficient stock while settling order ${orderId} for product ${item.product_id}`
+      );
+    }
+  }
+};
+
+const restoreOrderStock = async (client, orderId) => {
+  const items = await getOrderItemsForUpdate(client, orderId);
+
+  for (const item of items) {
+    await client.query(
+      `UPDATE products
+       SET stock = stock + $1
+       WHERE id = $2`,
+      [item.quantity, item.product_id]
+    );
+  }
+};
+
+const updateOrderForPaymentStatus = async ({ client, orderId, targetStatus }) => {
+  const { rows } = await client.query(
+    `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted
+     FROM orders
+     WHERE id = $1
+     FOR UPDATE`,
+    [orderId]
+  );
+
+  if (!rows.length) {
+    return { action: 'missing' };
+  }
+
+  const order = rows[0];
+  const previousStatus = order.status;
+  const hadStockDeducted = order.stock_deducted;
+  let stockAction = 'none';
+
+  if (previousStatus === targetStatus && (targetStatus !== 'paid' || hadStockDeducted)) {
+    return { action: 'noop', previousStatus, stockAction };
+  }
+
+  if (targetStatus === 'paid') {
+    if (!hadStockDeducted) {
+      await deductOrderStock(client, orderId);
+      stockAction = 'deducted';
+    }
+
+    await client.query(
+      `UPDATE orders
+       SET status = $1, stock_deducted = true
+       WHERE id = $2`,
+      [targetStatus, orderId]
+    );
+
+    return { action: 'updated', previousStatus, targetStatus, stockAction };
+  }
+
+  if (FAILURE_STATUSES.includes(targetStatus) && hadStockDeducted) {
+    await restoreOrderStock(client, orderId);
+    stockAction = 'restored';
+  }
+
+  await client.query(
+    `UPDATE orders
+     SET status = $1,
+         stock_deducted = CASE WHEN $3::boolean THEN false ELSE stock_deducted END
+     WHERE id = $2`,
+    [targetStatus, orderId, stockAction === 'restored']
+  );
+
+  return { action: 'updated', previousStatus, targetStatus, stockAction };
+};
+
 // ─── Webhook: POST /api/payments/notification ─────────────────────────────────
 // Mount WITHOUT the authenticate middleware.
-// Always returns HTTP 200 after processing so Midtrans does not retry.
+// Always returns HTTP 200 for verified non-actionable notifications. If a paid
+// notification cannot be fulfilled because stock is unavailable, we return an
+// error through Express so Midtrans retries and operators can investigate.
 
 const handleNotification = async (req, res, next) => {
   try {
@@ -129,76 +252,57 @@ const handleNotification = async (req, res, next) => {
     const targetStatus = resolveOrderStatus(transactionStatus, fraudStatus);
 
     if (targetStatus === null) {
-      console.log(`[Webhook] No status change needed for order_id ${rawOrderId} (${transactionStatus})`);
+      console.log(`[Webhook] No status change or stock movement for order_id ${rawOrderId} (${transactionStatus})`);
       return res.status(200).json({ message: 'No status change required.' });
     }
 
-    // 4. Lookup order by midtrans_order_id column
-    const lookupResult = await db.query(
-      'SELECT id, status FROM orders WHERE midtrans_order_id = $1',
-      [rawOrderId]
-    );
-
-    if (!lookupResult.rows.length) {
-      console.warn(`[Webhook] No order found with midtrans_order_id: ${rawOrderId}`);
-      return res.status(200).json({ message: 'Order not found, ignored.' });
-    }
-
-    const order = lookupResult.rows[0];
-    const orderId = order.id;
-
-    // 5. Idempotency guard — skip if already in target state or a terminal state
-    const terminalStatuses = ['paid', 'cancelled', 'expired', 'failed', 'completed'];
-    if (order.status === targetStatus) {
-      console.log(`[Webhook] Order ${orderId} already has status "${targetStatus}", skipping.`);
-      return res.status(200).json({ message: 'Already up to date.' });
-    }
-    if (terminalStatuses.includes(order.status)) {
-      console.warn(
-        `[Webhook] Order ${orderId} is in terminal status "${order.status}". ` +
-        `Refusing transition to "${targetStatus}".`
-      );
-      return res.status(200).json({ message: 'Order already in terminal state, ignored.' });
-    }
-
-    // 6. Perform the status update inside a DB transaction for atomicity
+    // 4. Perform lookup, status update, and any inventory movement atomically.
     const client = await db.connect();
     try {
       await client.query('BEGIN');
 
-      // Re-fetch with FOR UPDATE to prevent races from concurrent notifications
-      const locked = await client.query(
-        'SELECT id, status FROM orders WHERE midtrans_order_id = $1 FOR UPDATE',
+      const lookupResult = await client.query(
+        `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted
+         FROM orders
+         WHERE midtrans_order_id = $1
+         FOR UPDATE`,
         [rawOrderId]
       );
 
-      if (!locked.rows.length) {
+      if (!lookupResult.rows.length) {
         await client.query('ROLLBACK');
-        return res.status(200).json({ message: 'Order not found under lock, ignored.' });
+        console.warn(`[Webhook] No order found with midtrans_order_id: ${rawOrderId}`);
+        return res.status(200).json({ message: 'Order not found, ignored.' });
       }
 
-      const currentStatus = locked.rows[0].status;
+      const order = lookupResult.rows[0];
 
-      // Double-check under the lock
-      if (currentStatus === targetStatus || terminalStatuses.includes(currentStatus)) {
+      if (
+        TERMINAL_STATUSES.includes(order.status) &&
+        order.status !== targetStatus &&
+        !(FAILURE_STATUSES.includes(targetStatus) && order.stock_deducted)
+      ) {
         await client.query('ROLLBACK');
-        console.log(`[Webhook] Lock check: order ${orderId} status "${currentStatus}" unchanged.`);
-        return res.status(200).json({ message: 'No update needed (race check).' });
+        console.warn(
+          `[Webhook] Order ${order.id} is in terminal status "${order.status}". ` +
+          `Refusing transition to "${targetStatus}".`
+        );
+        return res.status(200).json({ message: 'Order already in terminal state, ignored.' });
       }
 
-      await client.query(
-        'UPDATE orders SET status = $1 WHERE id = $2',
-        [targetStatus, orderId]
-      );
+      const result = await updateOrderForPaymentStatus({ client, orderId: order.id, targetStatus });
 
       await client.query('COMMIT');
 
       console.log(
-        `[Webhook] Order ${orderId}: "${currentStatus}" → "${targetStatus}" (${transactionStatus})`
+        `[Webhook] Order ${order.id}: ${result.previousStatus || order.status} → ${targetStatus}; ` +
+        `stock action: ${result.stockAction || 'none'} (${transactionStatus})`
       );
 
       return res.status(200).json({
-        message: `Order ${orderId} status updated to "${targetStatus}".`,
+        message: `Order ${order.id} ${result.action}.`,
+        status: targetStatus,
+        stockAction: result.stockAction || 'none',
       });
 
     } catch (dbErr) {
@@ -216,4 +320,8 @@ const handleNotification = async (req, res, next) => {
   }
 };
 
-module.exports = { createPayment, handleNotification };
+module.exports = {
+  createPayment,
+  handleNotification,
+  resolveOrderStatus,
+};
