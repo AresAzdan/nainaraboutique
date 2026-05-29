@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const SizeGuideModel = require('./sizeGuideModel');
+const { buildProductPricingFields } = require('../utils/pricing');
 
 const ProductModel = {
 
@@ -69,14 +70,14 @@ const ProductModel = {
   },
 
   // Helper: get active discount percent for a set of product IDs
-  async _getActiveDiscounts(productIds) {
+  async _getActiveDiscounts(productIds, queryable = db) {
     if (!productIds.length) return {};
     // Keep discount evaluation in WIB to match admin discount scheduling.
     const now = new Date();
     const wibNow = new Date(now.getTime() + (now.getTimezoneOffset() + 420) * 60000);
     const dateStr = wibNow.toISOString().split('T')[0];
     const timeStr = wibNow.toTimeString().slice(0, 8);
-    const { rows } = await db.query(
+    const { rows } = await queryable.query(
       `SELECT dp.product_id, MAX(d.percentage) AS discount_percent
        FROM discount_products dp
        JOIN discounts d ON d.id = dp.discount_id
@@ -165,10 +166,7 @@ const ProductModel = {
 
     return rows.map(row => {
       const discountPercent = discountMap[row.id] || null;
-      const originalPrice   = discountPercent ? parseFloat(row.price) : null;
-      const finalPrice      = discountPercent
-        ? Math.round(parseFloat(row.price) * (1 - discountPercent / 100))
-        : parseFloat(row.price);
+      const pricingFields = buildProductPricingFields(row.price, discountPercent);
       // is_new: uploaded within last 30 days
       const createdAt = new Date(row.created_at);
       const isNew = (now - createdAt) < 30 * 24 * 60 * 60 * 1000;
@@ -181,12 +179,7 @@ const ProductModel = {
         size_stocks:      row.size_stocks || {},
         color:            row.color       || '',
         weight:           row.weight      || 500,
-        base_price:        parseFloat(row.price),
-        final_price:       finalPrice,
-        discount:          discountPercent ? `${discountPercent}%` : null,
-        discount_percent:  discountPercent,
-        original_price:    originalPrice,
-        price:             finalPrice,
+        ...pricingFields,
         is_new:           isNew,
         is_hot:           isHot,
         is_back_in_stock: Number(row.stock) > 0 && !!row.last_restocked_at,
@@ -215,10 +208,7 @@ const ProductModel = {
     const imagesMap = await this._getImages([rows[0].id]);
     const discountMap = await this._getActiveDiscounts([rows[0].id]);
     const discountPercent = discountMap[rows[0].id] || null;
-    const originalPrice   = discountPercent ? parseFloat(rows[0].price) : null;
-    const finalPrice      = discountPercent
-      ? Math.round(parseFloat(rows[0].price) * (1 - discountPercent / 100))
-      : parseFloat(rows[0].price);
+    const pricingFields = buildProductPricingFields(rows[0].price, discountPercent);
 
     return {
       ...rows[0],
@@ -227,18 +217,46 @@ const ProductModel = {
       size_stocks:      rows[0].size_stocks || {},
       color:            rows[0].color       || '',
       weight:           rows[0].weight      || 500,
-      base_price:        parseFloat(rows[0].price),
-      final_price:       finalPrice,
-      discount:          discountPercent ? `${discountPercent}%` : null,
-      discount_percent:  discountPercent,
-      original_price:    originalPrice,
-      price:             finalPrice,
+      ...pricingFields,
       is_back_in_stock: Number(rows[0].stock) > 0 && !!rows[0].last_restocked_at,
       last_restocked_at: rows[0].last_restocked_at || null,
       size_guide_id:    rows[0].size_guide_id || null,
       size_guide_data:  rows[0].size_guide_data || null,
       size_guide:       this._buildSizeGuide(rows[0]),
     };
+  },
+
+
+
+  async getOrderPricingSnapshots(items, queryable = db) {
+    const productIds = [...new Set((items || [])
+      .map(item => Number(item.product_id))
+      .filter(Number.isInteger))];
+
+    if (!productIds.length) return new Map();
+
+    const { rows } = await queryable.query(
+      `SELECT id, name, price
+       FROM products
+       WHERE id = ANY($1::int[])`,
+      [productIds]
+    );
+
+    const discountMap = await this._getActiveDiscounts(productIds, queryable);
+    const snapshots = new Map();
+
+    for (const row of rows) {
+      const pricingFields = buildProductPricingFields(row.price, discountMap[row.id] || null);
+      snapshots.set(Number(row.id), {
+        id: Number(row.id),
+        name: row.name,
+        base_price: pricingFields.base_price,
+        final_price: pricingFields.final_price,
+        discount_percent: pricingFields.discount_percent,
+      });
+    }
+
+    return snapshots;
   },
 
   async create({ name, description, price, stock, image_url, category_id, images = [], color = '', weight = 500, sizes = [], size_stocks = {}, size_guide_id = null, size_guide_data = null, save_size_guide = false, size_guide_name = '' }) {

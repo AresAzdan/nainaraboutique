@@ -2574,6 +2574,22 @@
 
             formatMoney(num) { return "$" + num; },
 
+            getBasePrice(product) {
+                return Number(product?.basePrice ?? product?.base_price ?? product?.price ?? 0);
+            },
+
+            getCurrentPrice(product) {
+                return Number(product?.finalPrice ?? product?.final_price ?? product?.price ?? 0);
+            },
+
+            getOriginalPrice(product) {
+                const current = this.getCurrentPrice(product);
+                const original = Number(product?.originalPrice ?? product?.original_price ?? 0);
+                if (original > current) return original;
+                const base = this.getBasePrice(product);
+                return base > current ? base : null;
+            },
+
             toggleFilter(type, value, event) {
                 this.data.currentPage = 1; 
                 if (['categories', 'prices', 'sizes', 'availability'].includes(type)) {
@@ -2788,13 +2804,13 @@
                     if (customPrice.min !== null || customPrice.max !== null) {
                         const min = customPrice.min !== null ? customPrice.min : 0;
                         const max = customPrice.max !== null ? customPrice.max : Infinity;
-                        matchPrice = p.price >= min && p.price <= max;
+                        matchPrice = this.getCurrentPrice(p) >= min && this.getCurrentPrice(p) <= max;
                     } else if (prices.length > 0) {
                         matchPrice = prices.some(range => {
-                            if(range === 'under-50') return p.price < 50;
-                            if(range === 'above-300') return p.price > 300;
+                            if(range === 'under-50') return this.getCurrentPrice(p) < 50;
+                            if(range === 'above-300') return this.getCurrentPrice(p) > 300;
                             const [min, max] = range.split('-').map(Number);
-                            return p.price >= min && p.price <= max;
+                            return this.getCurrentPrice(p) >= min && this.getCurrentPrice(p) <= max;
                         });
                     }
 
@@ -2809,8 +2825,8 @@
                     return matchSearch && matchCat && matchPrice && matchType && matchSize && matchStock;
                 });
 
-                if (sortValue === 'price-low') filtered.sort((a, b) => a.price - b.price);
-                else if (sortValue === 'price-high') filtered.sort((a, b) => b.price - a.price);
+                if (sortValue === 'price-low') filtered.sort((a, b) => this.getCurrentPrice(a) - this.getCurrentPrice(b));
+                else if (sortValue === 'price-high') filtered.sort((a, b) => this.getCurrentPrice(b) - this.getCurrentPrice(a));
                 else if (sortValue === 'newest') filtered.sort((a, b) => b.id - a.id);
                 
                 const totalItems = filtered.length;
@@ -2827,10 +2843,12 @@
                 this.dom.empty.classList.add('hidden');
 
                 this.dom.grid.innerHTML = paginatedItems.map(p => {
+                    const currentPrice = this.getCurrentPrice(p);
+                    const originalPrice = this.getOriginalPrice(p);
                     // Calculate discount pct from originalPrice if discount field is absent
                     let discountPct = null;
-                    if (p.originalPrice && p.originalPrice > p.price) {
-                        discountPct = Math.round((1 - p.price / p.originalPrice) * 100);
+                    if (originalPrice && originalPrice > currentPrice) {
+                        discountPct = Math.round((1 - currentPrice / originalPrice) * 100);
                     } else if (p.discount) {
                         // strip non-numeric, e.g. "20%" → 20
                         const parsed = parseInt(String(p.discount).replace(/[^0-9]/g, ''), 10);
@@ -2848,8 +2866,8 @@
 
                     const priceHTML = `
                         <div class="prod-price-row">
-                            <span class="prod-price">${this.formatMoney(p.price)}</span>
-                            ${p.originalPrice ? `<span class="prod-price-old">${this.formatMoney(p.originalPrice)}</span>` : ''}
+                            <span class="prod-price">${this.formatMoney(currentPrice)}</span>
+                            ${originalPrice ? `<span class="prod-price-old">${this.formatMoney(originalPrice)}</span>` : ''}
                         </div>`;
 
                     return `
@@ -2883,7 +2901,9 @@
                     this.data.products = apiProducts.map(item => ({
                         id: item.id,
                         name: item.name || "Unnamed Product",
-                        price: item.price,
+                        price: parseFloat(item.price) || 0,
+                        basePrice: parseFloat(item.base_price ?? item.price) || 0,
+                        finalPrice: parseFloat(item.final_price ?? item.price) || 0,
                         stock: item.stock ?? 0,
                         images: (item.images && item.images.length > 0) ? item.images : (item.image_url ? [item.image_url] : [PLACEHOLDER]),
                         category: item.category_name || item.category || "Uncategorized",
@@ -2895,7 +2915,7 @@
                         rating: item.rating || 5,
                         status: item.status || null,
                         discount: item.discount || null,
-                        originalPrice: item.original_price || null,
+                        originalPrice: item.original_price || item.originalPrice || null,
                         total_sold: item.total_sold || 0,
                         is_new: item.is_new || false,
                         is_hot: item.is_hot || false,
@@ -3006,9 +3026,11 @@
                             <h3>${this.t('recommended')}</h3>
                             <div class="recommended-grid">
                                 ${recs.map(r => {
+                                    const rCurrentPrice = this.getCurrentPrice(r);
+                                    const rOriginalPrice = this.getOriginalPrice(r);
                                     let rDiscPct = null;
-                                    if (r.originalPrice && r.originalPrice > r.price) {
-                                        rDiscPct = Math.round((1 - r.price / r.originalPrice) * 100);
+                                    if (rOriginalPrice && rOriginalPrice > rCurrentPrice) {
+                                        rDiscPct = Math.round((1 - rCurrentPrice / rOriginalPrice) * 100);
                                     } else if (r.discount) {
                                         const pd = parseInt(String(r.discount).replace(/[^0-9]/g, ''), 10);
                                         if (!isNaN(pd) && pd > 0) rDiscPct = pd;
@@ -3028,8 +3050,8 @@
                                             </div>
                                             <h3 class="prod-title">${r.name}</h3>
                                             <div class="prod-price-row">
-                                                <span class="prod-price">${this.formatMoney(r.price)}</span>
-                                                ${r.originalPrice ? `<span class="prod-price-old">${this.formatMoney(r.originalPrice)}</span>` : ''}
+                                                <span class="prod-price">${this.formatMoney(rCurrentPrice)}</span>
+                                                ${rOriginalPrice ? `<span class="prod-price-old">${this.formatMoney(rOriginalPrice)}</span>` : ''}
                                             </div>
                                         </div>
                                     </div>`;
@@ -3043,6 +3065,8 @@
                     ? p.images.filter(Boolean)
                     : [];
                 const mainImage = displayImages[0] || 'https://placehold.co/600x800/f0ede6/5D5340?text=No+Image';
+                const currentPrice = this.getCurrentPrice(p);
+                const originalPrice = this.getOriginalPrice(p);
 
                 
                 document.getElementById('product-detail-wrapper').innerHTML = `
@@ -3065,8 +3089,8 @@
                             <h1 class="pd-title-modern">${p.name}</h1>
                             
                             <div class="pd-price-row">
-                                <span class="pd-price-current">${this.formatMoney(p.price)}</span>
-                                ${p.originalPrice ? `<span class="pd-price-old">${this.formatMoney(p.originalPrice)}</span>` : ''}
+                                <span class="pd-price-current">${this.formatMoney(currentPrice)}</span>
+                                ${originalPrice ? `<span class="pd-price-old">${this.formatMoney(originalPrice)}</span>` : ''}
                                 <div class="pd-stars" id="pd-stars-${p.id}">
                                     <span id="pd-stars-icons-${p.id}">${this.renderStars(p.average_rating || 0)}</span>
                                     <span class="pd-reviews-count" id="pd-review-count-${p.id}" onclick="app.openReviewModal(${p.id})" title="Lihat semua ulasan">
@@ -3469,7 +3493,7 @@
                     existingItem.qty += qty;
                 } else {
                     this.data.cart.push({
-                        id: p.id, name: p.name, price: p.price, qty: qty,
+                        id: p.id, name: p.name, price: this.getCurrentPrice(p), basePrice: this.getBasePrice(p), originalPrice: this.getOriginalPrice(p), qty: qty,
                         size: size || null,
                         image_url: (p.images && p.images[0]) || '',
                         image: (p.images && p.images[0]) || ''
@@ -5864,6 +5888,8 @@
                         name: item.name || 'Unnamed Product',
                         description: item.description || '',
                         price: parseFloat(item.price) || 0,
+                        basePrice: parseFloat(item.base_price ?? item.price) || 0,
+                        finalPrice: parseFloat(item.final_price ?? item.price) || 0,
                         originalPrice: item.original_price || item.originalPrice || null,
                         category: item.category_name || item.category || 'Uncategorized',
                         color: (Array.isArray(item.colors) && item.colors.length > 0)
