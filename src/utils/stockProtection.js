@@ -37,76 +37,136 @@ function normalizeStockValue(value) {
 
 function parseColorToken(colorToken) {
   const raw = normalizeColor(colorToken);
-  if (!raw) return { raw: null, name: null };
-  const sep = raw.indexOf('::');
+  if (!raw) return { raw: null, name: null, color: null };
+
+  const doubleColonSep = raw.indexOf('::');
+  if (doubleColonSep !== -1) {
+    return {
+      raw,
+      name: normalizeColor(raw.slice(0, doubleColonSep)),
+      color: normalizeColor(raw.slice(doubleColonSep + 2)),
+    };
+  }
+
+  const nameHexMatch = raw.match(/^(.+?):\s*(#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?)$/);
+  if (nameHexMatch) {
+    return {
+      raw,
+      name: normalizeColor(nameHexMatch[1]),
+      color: normalizeColor(nameHexMatch[2]),
+    };
+  }
+
+  const isHex = /^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/.test(raw);
   return {
     raw,
-    name: sep === -1 ? raw : normalizeColor(raw.slice(0, sep)),
+    name: isHex ? null : raw,
+    color: isHex ? raw : null,
   };
+}
+
+function normalizeLookupKey(value) {
+  const text = normalizeText(value);
+  return text ? text.toLowerCase().replace(/\s+/g, '') : null;
+}
+
+function colorLookupCandidates(colorToken) {
+  const parsed = parseColorToken(colorToken);
+  if (!parsed.raw) return [];
+  const combined = [];
+  if (parsed.name && parsed.color) {
+    combined.push(`${parsed.name}::${parsed.color}`, `${parsed.name}:${parsed.color}`);
+  }
+  return uniqueValues([parsed.raw, parsed.name, parsed.color, ...combined]);
+}
+
+function findMatchingOwnKey(map, candidates) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+  const keys = Object.keys(map);
+
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(map, candidate)) return candidate;
+  }
+
+  const normalizedCandidates = new Set(candidates.map(normalizeLookupKey).filter(Boolean));
+  return keys.find(key => normalizedCandidates.has(normalizeLookupKey(key))) || null;
+}
+
+function getStockValueForKey(map, candidates) {
+  const key = findMatchingOwnKey(map, candidates);
+  if (key === null) return null;
+  return normalizeStockValue(map[key]);
 }
 
 function uniqueValues(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function getVariantStockValue(variantStocks, color, size) {
-  const { raw: rawColor, name: displayColor } = parseColorToken(color);
+function getColorStockValue(stockMap, color, size) {
+  if (!stockMap || typeof stockMap !== 'object' || Array.isArray(stockMap)) return null;
+
+  const colorKeys = colorLookupCandidates(color);
   const sizeKey = normalizeSize(size);
-  if (!rawColor) return null;
-
-  const colorKeys = uniqueValues([rawColor, displayColor]);
   const sizeKeys = uniqueValues([sizeKey, 'default']);
+  if (!colorKeys.length) return null;
 
-  for (const colorKey of colorKeys) {
-    const nested = variantStocks[colorKey];
+  const outerColorKey = findMatchingOwnKey(stockMap, colorKeys);
+  if (outerColorKey !== null) {
+    const nested = stockMap[outerColorKey];
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      for (const key of sizeKeys) {
-        if (Object.prototype.hasOwnProperty.call(nested, key)) {
-          const stock = normalizeStockValue(nested[key]);
-          if (stock !== null) return stock;
-        }
-      }
+      const nestedStock = getStockValueForKey(nested, sizeKeys);
+      if (nestedStock !== null) return nestedStock;
     }
   }
 
   for (const colorKey of colorKeys) {
     for (const key of sizeKeys) {
-      const compositeKey = `${colorKey}::${key}`;
-      if (Object.prototype.hasOwnProperty.call(variantStocks, compositeKey)) {
-        const stock = normalizeStockValue(variantStocks[compositeKey]);
-        if (stock !== null) return stock;
-      }
+      const compositeStock = getStockValueForKey(stockMap, [`${colorKey}::${key}`]);
+      if (compositeStock !== null) return compositeStock;
     }
   }
 
-  for (const colorKey of colorKeys) {
-    if (!sizeKey && Object.prototype.hasOwnProperty.call(variantStocks, colorKey)) {
-      const stock = normalizeStockValue(variantStocks[colorKey]);
-      if (stock !== null) return stock;
-    }
-  }
+  const flatColorStock = getStockValueForKey(stockMap, colorKeys);
+  if (flatColorStock !== null) return flatColorStock;
 
   return null;
+}
+
+function getVariantStockValue(variantStocks, color, size) {
+  return getColorStockValue(variantStocks, color, size);
+}
+
+function hasStockMapEntries(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
 }
 
 function resolveAvailableStock(product, size, color) {
   const sizeKey = normalizeSize(size);
   const colorKey = normalizeColor(color);
   const variantStocks = normalizeVariantStocks(product && product.variant_stocks);
+  const sizeStocks = normalizeSizeStocks(product && product.size_stocks);
 
   if (colorKey) {
     const variantStock = getVariantStockValue(variantStocks, colorKey, sizeKey);
     if (variantStock !== null) {
       return { available: variantStock, source: 'variant' };
     }
+
+    const colorSizeStock = getColorStockValue(sizeStocks, colorKey, sizeKey);
+    if (colorSizeStock !== null) {
+      return { available: colorSizeStock, source: 'size_color' };
+    }
   }
 
-  const sizeStocks = normalizeSizeStocks(product && product.size_stocks);
-  if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
-    const stock = normalizeStockValue(sizeStocks[sizeKey]);
+  if (sizeKey) {
+    const stock = getStockValueForKey(sizeStocks, [sizeKey]);
     if (stock !== null) {
       return { available: stock, source: 'size' };
     }
+  }
+
+  if (hasStockMapEntries(variantStocks) || hasStockMapEntries(sizeStocks)) {
+    return { available: 0, source: 'unmatched_variant' };
   }
 
   const stock = normalizeStockValue(product && product.stock);
@@ -232,6 +292,8 @@ async function validateOrderStock(items, queryable, options = {}) {
 module.exports = {
   aggregateRequestedItems,
   createStockError,
+  colorLookupCandidates,
+  findMatchingOwnKey,
   getStockSnapshots,
   getVariantStock,
   getVariantStockValue,

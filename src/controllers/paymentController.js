@@ -1,7 +1,7 @@
 const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
-const { normalizeSizeStocks, normalizeVariantStocks, parseColorToken, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
+const { colorLookupCandidates, findMatchingOwnKey, normalizeSizeStocks, normalizeVariantStocks, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -154,35 +154,40 @@ const applyFlatStockDelta = (stocks, key, delta) => {
   return { ...stocks, [key]: next };
 };
 
-const applyVariantStockDelta = (product, size, color, delta) => {
+const applyMatchedFlatStockDelta = (stocks, candidates, delta) => {
+  const key = findMatchingOwnKey(stocks, candidates);
+  return key === null ? stocks : applyFlatStockDelta(stocks, key, delta);
+};
+
+const applyColorStockDelta = (stocks, size, color, delta) => {
   const sizeKey = size || null;
   const sizeKeys = [...new Set([sizeKey, 'default'].filter(Boolean))];
+  const colorKeys = colorLookupCandidates(color);
+
+  const outerColorKey = findMatchingOwnKey(stocks, colorKeys);
+  if (outerColorKey !== null) {
+    for (const key of sizeKeys) {
+      const nextStocks = applyNestedStockDelta(stocks, outerColorKey, key, delta);
+      if (nextStocks !== stocks) return nextStocks;
+    }
+  }
+
+  for (const colorKey of colorKeys) {
+    for (const key of sizeKeys) {
+      const nextStocks = applyMatchedFlatStockDelta(stocks, [`${colorKey}::${key}`], delta);
+      if (nextStocks !== stocks) return nextStocks;
+    }
+  }
+
+  const nextStocks = applyMatchedFlatStockDelta(stocks, colorKeys, delta);
+  if (nextStocks !== stocks) return nextStocks;
+
+  return stocks;
+};
+
+const applyVariantStockDelta = (product, size, color, delta) => {
   const variantStocks = normalizeVariantStocks(product.variant_stocks);
-  const parsed = parseColorToken(color);
-  const colorKeys = [...new Set([parsed.raw, parsed.name].filter(Boolean))];
-
-  for (const colorKey of colorKeys) {
-    for (const key of sizeKeys) {
-      const nextVariantStocks = applyNestedStockDelta(variantStocks, colorKey, key, delta);
-      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
-    }
-  }
-
-  for (const colorKey of colorKeys) {
-    for (const key of sizeKeys) {
-      const nextVariantStocks = applyFlatStockDelta(variantStocks, `${colorKey}::${key}`, delta);
-      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
-    }
-  }
-
-  for (const colorKey of colorKeys) {
-    if (!sizeKey) {
-      const nextVariantStocks = applyFlatStockDelta(variantStocks, colorKey, delta);
-      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
-    }
-  }
-
-  return variantStocks;
+  return applyColorStockDelta(variantStocks, size, color, delta);
 };
 
 const applySizeStockDelta = (product, size, delta) => {
@@ -194,6 +199,9 @@ const applySizeStockDelta = (product, size, delta) => {
 const applyResolvedStockDelta = (product, size, color, source, delta) => {
   if (source === 'variant') {
     return { stocks: applyVariantStockDelta(product, size, color, delta), updateVariantStocks: true, updateSizeStocks: false };
+  }
+  if (source === 'size_color') {
+    return { stocks: applyColorStockDelta(normalizeSizeStocks(product.size_stocks), size, color, delta), updateVariantStocks: false, updateSizeStocks: true };
   }
   if (source === 'size') {
     return { stocks: applySizeStockDelta(product, size, delta), updateVariantStocks: false, updateSizeStocks: true };
