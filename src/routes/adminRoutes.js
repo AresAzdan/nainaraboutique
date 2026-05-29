@@ -8,7 +8,7 @@ const { createCategory, updateCategory, deleteCategory } = require('../controlle
 
 // FIX E — import all three admin order handlers from orderController
 // These are now properly defined and exported so this import will not throw
-const { getAllOrders, adminGetOrder, adminUpdateOrderStatus, adminDeleteOrder } = require('../controllers/orderController');
+const { getAllOrders, adminGetOrder, adminUpdateOrderStatus, adminReviewRefund, adminDeleteOrder } = require('../controllers/orderController');
 
 const { getAllDiscounts, createDiscount, updateDiscount, deleteDiscount } = require('../controllers/discountController');
 const { getAllCustomers, getCustomer } = require('../controllers/customerController');
@@ -55,6 +55,7 @@ router.delete('/categories/:id', deleteCategory);
 router.get('/orders',              getAllOrders);
 router.get('/orders/:id',          adminGetOrder);
 router.put('/orders/:id/status',   validate(['status']), adminUpdateOrderStatus);
+router.patch('/orders/:id/refund', adminReviewRefund);
 router.delete('/orders/:id',        adminDeleteOrder);
 
 // ── Discounts ─────────────────────────────────

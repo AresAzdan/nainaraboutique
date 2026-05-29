@@ -6,6 +6,7 @@ const {
   getMyOrder,
   updateOrderStatus,
   cancelOrder,
+  requestRefund,
   getGuestOrder,
 } = require('../controllers/orderController');
 const { handleNotification } = require('../controllers/paymentController');
@@ -36,6 +37,9 @@ router.patch('/:id/status', updateOrderStatus);
 
 // Cancel a pending order
 router.patch('/:id/cancel', cancelOrder);
+
+// Request refund for a paid order. This does not call Midtrans.
+router.post('/:id/refund-request', requestRefund);
 
 // Get single order detail (own only) — keep LAST among /:id patterns
 router.get('/:id', getMyOrder);
