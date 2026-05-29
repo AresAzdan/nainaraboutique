@@ -3134,7 +3134,6 @@
                                 <div class="size-btn-group" id="detail-size-container">
                                     ${safeSizes.map(s => {
                                         const sizeStock = this.getAvailableStock(p, s, this.data.selectedColor);
-                                        const sizeStock = this.getAvailableStock(p, s);
                                         if (sizeStock <= 0) return `<div class="size-box disabled" title="Out of stock">${s}</div>`;
                                         const activeClass = s === this.data.selectedSize ? 'active' : '';
                                         return `<div class="size-box ${activeClass}" onclick="app.selectSizeDetail('${s}', ${p.id})">${s}</div>`;
