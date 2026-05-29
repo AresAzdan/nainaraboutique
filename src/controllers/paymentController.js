@@ -1,7 +1,7 @@
 const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
-const { getVariantStock, normalizeSizeStocks, normalizeVariantStocks, parseColorToken, validateOrderStock } = require('../utils/stockProtection');
+const { normalizeSizeStocks, normalizeVariantStocks, parseColorToken, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -155,27 +155,50 @@ const applyFlatStockDelta = (stocks, key, delta) => {
 };
 
 const applyVariantStockDelta = (product, size, color, delta) => {
-  const sizeKey = size || 'default';
-  if (color) {
-    const variantStocks = normalizeVariantStocks(product.variant_stocks);
-    const parsed = parseColorToken(color);
-    const colorKeys = [...new Set([parsed.raw, parsed.name].filter(Boolean))];
+  const sizeKey = size || null;
+  const sizeKeys = [...new Set([sizeKey, 'default'].filter(Boolean))];
+  const variantStocks = normalizeVariantStocks(product.variant_stocks);
+  const parsed = parseColorToken(color);
+  const colorKeys = [...new Set([parsed.raw, parsed.name].filter(Boolean))];
 
-    for (const colorKey of colorKeys) {
-      const nextVariantStocks = applyNestedStockDelta(variantStocks, colorKey, sizeKey, delta);
+  for (const colorKey of colorKeys) {
+    for (const key of sizeKeys) {
+      const nextVariantStocks = applyNestedStockDelta(variantStocks, colorKey, key, delta);
       if (nextVariantStocks !== variantStocks) return nextVariantStocks;
     }
-
-    for (const colorKey of colorKeys) {
-      const nextVariantStocks = applyFlatStockDelta(variantStocks, `${colorKey}::${sizeKey}`, delta);
-      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
-    }
-
-    return variantStocks;
   }
 
+  for (const colorKey of colorKeys) {
+    for (const key of sizeKeys) {
+      const nextVariantStocks = applyFlatStockDelta(variantStocks, `${colorKey}::${key}`, delta);
+      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
+    }
+  }
+
+  for (const colorKey of colorKeys) {
+    if (!sizeKey) {
+      const nextVariantStocks = applyFlatStockDelta(variantStocks, colorKey, delta);
+      if (nextVariantStocks !== variantStocks) return nextVariantStocks;
+    }
+  }
+
+  return variantStocks;
+};
+
+const applySizeStockDelta = (product, size, delta) => {
+  const sizeKey = size || 'default';
   const sizeStocks = normalizeSizeStocks(product.size_stocks);
   return applyFlatStockDelta(sizeStocks, sizeKey, delta);
+};
+
+const applyResolvedStockDelta = (product, size, color, source, delta) => {
+  if (source === 'variant') {
+    return { stocks: applyVariantStockDelta(product, size, color, delta), updateVariantStocks: true, updateSizeStocks: false };
+  }
+  if (source === 'size') {
+    return { stocks: applySizeStockDelta(product, size, delta), updateVariantStocks: false, updateSizeStocks: true };
+  }
+  return { stocks: {}, updateVariantStocks: false, updateSizeStocks: false };
 };
 
 const deductOrderStock = async (client, orderId) => {
@@ -187,23 +210,23 @@ const deductOrderStock = async (client, orderId) => {
 
     const quantity = Number(item.quantity);
     const productStock = Number(product.stock) || 0;
-    const variantStock = getVariantStock(product, item.size, item.color);
+    const resolvedStock = resolveAvailableStock(product, item.size, item.color);
 
-    if (productStock < quantity || variantStock < quantity) {
+    if (productStock < quantity || resolvedStock.available < quantity) {
       throw new Error(
         `Insufficient stock while settling order ${orderId} for product ${item.product_id}`
       );
     }
 
-    const nextVariantOrSizeStocks = applyVariantStockDelta(product, item.size, item.color, -quantity);
+    const stockDelta = applyResolvedStockDelta(product, item.size, item.color, resolvedStock.source, -quantity);
     const { rows } = await client.query(
       `UPDATE products
        SET stock = stock - $1,
-           size_stocks = CASE WHEN $4::boolean THEN size_stocks ELSE $3::jsonb END,
-           variant_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE variant_stocks END
+           size_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE size_stocks END,
+           variant_stocks = CASE WHEN $5::boolean THEN $3::jsonb ELSE variant_stocks END
        WHERE id = $2 AND stock >= $1
        RETURNING id, stock`,
-      [quantity, item.product_id, JSON.stringify(nextVariantOrSizeStocks), !!item.color]
+      [quantity, item.product_id, JSON.stringify(stockDelta.stocks), stockDelta.updateSizeStocks, stockDelta.updateVariantStocks]
     );
 
     if (!rows.length) {
@@ -222,15 +245,16 @@ const restoreOrderStock = async (client, orderId) => {
     if (!product) continue;
 
     const quantity = Number(item.quantity);
-    const nextVariantOrSizeStocks = applyVariantStockDelta(product, item.size, item.color, quantity);
+    const resolvedStock = resolveAvailableStock(product, item.size, item.color);
+    const stockDelta = applyResolvedStockDelta(product, item.size, item.color, resolvedStock.source, quantity);
 
     await client.query(
       `UPDATE products
        SET stock = stock + $1,
-           size_stocks = CASE WHEN $4::boolean THEN size_stocks ELSE $3::jsonb END,
-           variant_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE variant_stocks END
+           size_stocks = CASE WHEN $4::boolean THEN $3::jsonb ELSE size_stocks END,
+           variant_stocks = CASE WHEN $5::boolean THEN $3::jsonb ELSE variant_stocks END
        WHERE id = $2`,
-      [quantity, item.product_id, JSON.stringify(nextVariantOrSizeStocks), !!item.color]
+      [quantity, item.product_id, JSON.stringify(stockDelta.stocks), stockDelta.updateSizeStocks, stockDelta.updateVariantStocks]
     );
   }
 };

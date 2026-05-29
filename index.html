@@ -3360,19 +3360,35 @@
                 if (!colorRaw || !variantStocks || typeof variantStocks !== 'object' || Array.isArray(variantStocks)) return null;
                 const parsed = this.parseColorToken(colorRaw);
                 const colorKeys = [...new Set([colorRaw, parsed.name].filter(Boolean))];
-                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : 'default';
+                const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
+                const sizeKeys = [...new Set([sizeKey, 'default'].filter(Boolean))];
 
                 for (const colorKey of colorKeys) {
                     const nested = variantStocks[colorKey];
-                    if (nested && typeof nested === 'object' && !Array.isArray(nested) && Object.prototype.hasOwnProperty.call(nested, sizeKey)) {
-                        return this.normalizeStockValue(nested[sizeKey]);
+                    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+                        for (const key of sizeKeys) {
+                            if (Object.prototype.hasOwnProperty.call(nested, key)) {
+                                const stock = this.normalizeStockValue(nested[key]);
+                                if (stock !== null) return stock;
+                            }
+                        }
                     }
                 }
 
                 for (const colorKey of colorKeys) {
-                    const compositeKey = `${colorKey}::${sizeKey}`;
-                    if (Object.prototype.hasOwnProperty.call(variantStocks, compositeKey)) {
-                        return this.normalizeStockValue(variantStocks[compositeKey]);
+                    for (const key of sizeKeys) {
+                        const compositeKey = `${colorKey}::${key}`;
+                        if (Object.prototype.hasOwnProperty.call(variantStocks, compositeKey)) {
+                            const stock = this.normalizeStockValue(variantStocks[compositeKey]);
+                            if (stock !== null) return stock;
+                        }
+                    }
+                }
+
+                for (const colorKey of colorKeys) {
+                    if (!sizeKey && Object.prototype.hasOwnProperty.call(variantStocks, colorKey)) {
+                        const stock = this.normalizeStockValue(variantStocks[colorKey]);
+                        if (stock !== null) return stock;
                     }
                 }
 
@@ -3383,17 +3399,16 @@
                 if (!product) return 0;
                 const colorKey = color && String(color).trim() !== 'null' ? String(color).trim() : null;
                 const sizeKey = size && String(size).trim() !== 'null' ? String(size).trim() : null;
-                const variantStocks = product.variant_stocks && typeof product.variant_stocks === 'object' ? product.variant_stocks : {};
+                const variantStocks = product.variant_stocks && typeof product.variant_stocks === 'object' && !Array.isArray(product.variant_stocks) ? product.variant_stocks : {};
                 if (colorKey) {
                     const variantStock = this.getVariantStockFromMap(variantStocks, colorKey, sizeKey);
-                    return variantStock === null ? 0 : variantStock;
+                    if (variantStock !== null) return variantStock;
                 }
-                if (Object.keys(variantStocks).length > 0) return 0;
 
-                const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' ? product.size_stocks : {};
+                const sizeStocks = product.size_stocks && typeof product.size_stocks === 'object' && !Array.isArray(product.size_stocks) ? product.size_stocks : {};
                 if (sizeKey && Object.prototype.hasOwnProperty.call(sizeStocks, sizeKey)) {
-                    const variantStock = this.normalizeStockValue(sizeStocks[sizeKey]);
-                    return variantStock === null ? 0 : variantStock;
+                    const sizeStock = this.normalizeStockValue(sizeStocks[sizeKey]);
+                    if (sizeStock !== null) return sizeStock;
                 }
                 const stock = this.normalizeStockValue(product.stock);
                 return stock === null ? 0 : stock;
