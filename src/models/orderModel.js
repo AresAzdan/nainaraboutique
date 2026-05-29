@@ -100,10 +100,15 @@ const OrderModel = {
       await client.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size, color)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [order.id, item.product_id, item.quantity, item.price, item.product_name || null, item.size || null, item.color || null]
-        `INSERT INTO order_items (order_id, product_id, quantity, price, product_name, size)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [order.id, item.product_id, item.quantity, item.price, item.product_name || null, item.size || null]
+        [
+          order.id,
+          item.product_id,
+          item.quantity,
+          item.price,
+          item.product_name || null,
+          item.size || null,
+          item.color || null,
+        ]
       );
     }
 
