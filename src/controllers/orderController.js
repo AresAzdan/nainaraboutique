@@ -2,7 +2,7 @@ const midtransClient = require('midtrans-client');
 const db = require('../config/db');
 const OrderModel = require('../models/orderModel');
 const ProductModel = require('../models/productModel');
-const { buildPricedOrderItems, calculateOrderTotal } = require('../utils/orderPricing');
+const { buildPricedOrderItems, calculateOrderTotal, buildMidtransSnapPayload } = require('../utils/orderPricing');
 const { validateOrderStock } = require('../utils/stockProtection');
 const refundService = require('../services/refundService');
 
@@ -173,17 +173,19 @@ exports.createOrder = async (req, res) => {
 
     let snapResponse;
     try {
-      snapResponse = await snap.createTransaction({
-        transaction_details: {
-          order_id: midtransOrderId,
-          gross_amount: Math.round(totalAmount),
-        },
-        customer_details: {
-          first_name: recipientName || req.user.name || 'Customer',
+      snapResponse = await snap.createTransaction(buildMidtransSnapPayload({
+        orderId: midtransOrderId,
+        grossAmount: Math.round(totalAmount),
+        items: enrichedItems,
+        shippingCost,
+        discountAmount,
+        customer: {
+          firstName: recipientName || req.user.name || 'Customer',
           email: req.user.email || '',
           phone: phone || '',
+          shippingAddress,
         },
-      });
+      }));
       console.log('[createOrder] ✔ snap.createTransaction succeeded, token:', snapResponse.token);
     } catch (midtransErr) {
       console.error('[createOrder] ✖ snap.createTransaction failed:', midtransErr);
@@ -262,17 +264,19 @@ exports._createOrderNoPool = async (req, res, params) => {
 
     let snapResponse;
     try {
-      snapResponse = await snap.createTransaction({
-        transaction_details: {
-          order_id: midtransOrderId,
-          gross_amount: Math.round(totalAmount),
-        },
-        customer_details: {
-          first_name: recipientName || req.user.name || 'Customer',
+      snapResponse = await snap.createTransaction(buildMidtransSnapPayload({
+        orderId: midtransOrderId,
+        grossAmount: Math.round(totalAmount),
+        items: enrichedItems,
+        shippingCost,
+        discountAmount,
+        customer: {
+          firstName: recipientName || req.user.name || 'Customer',
           email: req.user.email || '',
           phone: phone || '',
+          shippingAddress,
         },
-      });
+      }));
       console.log('[createOrder/noPool] ✔ snap token:', snapResponse.token);
     } catch (midtransErr) {
       console.error('[createOrder/noPool] ✖ Midtrans failed:', midtransErr);
@@ -354,10 +358,19 @@ exports.createGuestOrder = async (req, res) => {
 
     let snapResponse;
     try {
-      snapResponse = await snap.createTransaction({
-        transaction_details: { order_id: midtransOrderId, gross_amount: Math.round(totalAmount) },
-        customer_details: { first_name: recipientName || 'Guest', email: guestEmail || '', phone: phone || '' },
-      });
+      snapResponse = await snap.createTransaction(buildMidtransSnapPayload({
+        orderId: midtransOrderId,
+        grossAmount: Math.round(totalAmount),
+        items: enrichedItems,
+        shippingCost,
+        discountAmount,
+        customer: {
+          firstName: recipientName || 'Guest',
+          email: guestEmail || '',
+          phone: phone || '',
+          shippingAddress,
+        },
+      }));
       console.log('[createGuestOrder] ✔ snap token:', snapResponse.token);
     } catch (midtransErr) {
       console.error('[createGuestOrder] ✖ Midtrans failed:', midtransErr);
