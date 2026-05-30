@@ -506,9 +506,30 @@ exports.adminGetOrder = async (req, res) => {
 
 exports.adminUpdateOrderStatus = async (req, res) => {
   try {
+    const body = req.body || {};
+    const status = String(body.status || '').trim().toLowerCase();
+    const trackingNumber = typeof body.tracking_number === 'string'
+      ? body.tracking_number.trim()
+      : body.tracking_number;
+    const trackingCourier = typeof body.tracking_courier === 'string'
+      ? body.tracking_courier.trim()
+      : body.tracking_courier;
+
+    if (status === 'shipped') {
+      if (!trackingNumber) {
+        return res.status(400).json({ message: 'Tracking number is required when status is shipped' });
+      }
+      if (!trackingCourier) {
+        return res.status(400).json({ message: 'Tracking courier is required when status is shipped' });
+      }
+    }
+
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
-    const updated = await OrderModel.updateStatus(order.id, req.body.status);
+    const updated = await OrderModel.updateStatus(order.id, status, {
+      trackingNumber,
+      trackingCourier,
+    });
     return res.json({ order: updated });
   } catch (err) {
     console.error('[adminUpdateOrderStatus]', err);
