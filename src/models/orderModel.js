@@ -115,10 +115,22 @@ const OrderModel = {
     return order;
   },
 
-  async updateStatus(id, status) {
+  async updateStatus(id, status, options = {}) {
+    const trackingNumber = options.trackingNumber ?? options.tracking_number ?? null;
+    const trackingCourier = options.trackingCourier ?? options.tracking_courier ?? null;
+
     const { rows } = await db.query(
-      `UPDATE orders SET status = $1 WHERE id = $2 RETURNING *`,
-      [status, id]
+      `UPDATE orders
+       SET status = $1,
+           tracking_number = CASE WHEN $1 = 'shipped' THEN $3 ELSE tracking_number END,
+           tracking_courier = CASE WHEN $1 = 'shipped' THEN $4 ELSE tracking_courier END,
+           delivered_at = CASE
+             WHEN $1 = 'completed' AND delivered_at IS NULL THEN NOW()
+             ELSE delivered_at
+           END
+       WHERE id = $2
+       RETURNING *`,
+      [status, id, trackingNumber, trackingCourier]
     );
     return rows[0] || null;
   },
