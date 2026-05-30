@@ -1453,8 +1453,20 @@
 
     <script>
     const API_BASE = 'https://nainaraboutique.com';
+    const ADMIN_VIEWS = ['dashboard','orders','products','categories','order-detail','stock','discounts','coupons','customers','customer-detail','returns','homepage','activity','settings'];
+    const ADMIN_MENU_INDEX = { dashboard:0, orders:1, products:2, categories:3, stock:4, discounts:5, coupons:6, customers:7, returns:8, activity:9, homepage:10, settings:11 };
+    const ADMIN_VIEW_TITLES = { dashboard:'Dashboard Overview', orders:'Order Management', products:'Product Catalog', categories:'Category Management', 'order-detail':'Order Details', stock:'Stock Management', discounts:'Discount Events', coupons:'Coupon & Promo Codes', customers:'Customer Database', 'customer-detail':'Customer Profile', returns:'Return Management', homepage:'Homepage Editor', activity:'Activity Log', settings:'System Settings' };
 
     function getToken() { return sessionStorage.getItem('nainara_token'); }
+
+    function normalizeAdminView(viewId) {
+        return ADMIN_VIEWS.includes(viewId) ? viewId : 'dashboard';
+    }
+
+    function getAdminViewFromHash() {
+        const hashView = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+        return normalizeAdminView(hashView || 'dashboard');
+    }
 
     async function apiFetch(endpoint, reqOptions = {}) {
         const token = getToken();
@@ -1571,7 +1583,12 @@
 
         init: function() {
             const token = getToken();
-            if (!token) { window.location.href = 'nainara_login.html'; return; }
+            if (!token) { window.location.replace('nainara_login.html'); return; }
+            this.currentView = getAdminViewFromHash();
+            this.updateBrowserHistory(this.currentView, true);
+            window.addEventListener('popstate', () => {
+                this.navigateTo(getAdminViewFromHash(), { fromHistory: true });
+            });
             const userRaw = sessionStorage.getItem('nainara_user');
             if (userRaw) {
                 try {
@@ -1652,6 +1669,7 @@
                 this.renderSettings();
                 this.applySettingsEffects();
                 this.buildRevenueChart();
+                this.navigateTo(this.currentView || getAdminViewFromHash(), { replace: true });
             } catch(err) {
                 this.showToast('⚠️ Failed to load data: ' + err.message);
             } finally {
@@ -1750,22 +1768,33 @@
             document.querySelector('.sidebar-overlay').classList.toggle('active');
         },
 
-        navigateTo: function(viewId) {
+        updateBrowserHistory: function(viewId, replace = false) {
+            const normalizedView = normalizeAdminView(viewId);
+            const targetUrl = '#' + normalizedView;
+            if (window.location.hash === targetUrl && !replace) return;
+            const state = { adminView: normalizedView };
+            if (replace) history.replaceState(state, '', targetUrl);
+            else history.pushState(state, '', targetUrl);
+        },
+
+        navigateTo: function(viewId, options = {}) {
+            viewId = normalizeAdminView(viewId);
+            const shouldReplaceHistory = !!options.replace;
+            const isHistoryNavigation = !!options.fromHistory;
+            if (!isHistoryNavigation) this.updateBrowserHistory(viewId, shouldReplaceHistory);
+            this.currentView = viewId;
             const sidebar = document.getElementById('sidebar');
             if (sidebar.classList.contains('active')) this.toggleSidebar();
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
-            const menuMap = { dashboard:0, orders:1, products:2, categories:3, stock:4, discounts:5, coupons:6, customers:7, returns:8, activity:9, homepage:10, settings:11 };
             const menuItems = document.querySelectorAll('.menu-item');
-            if (menuMap[viewId] !== undefined) menuItems[menuMap[viewId]]?.classList.add('active');
+            if (ADMIN_MENU_INDEX[viewId] !== undefined) menuItems[ADMIN_MENU_INDEX[viewId]]?.classList.add('active');
             document.body.style.cursor = 'wait';
             setTimeout(() => {
                 document.body.style.cursor = 'default';
-                const views = ['dashboard','orders','products','categories','order-detail','stock','discounts','coupons','customers','customer-detail','returns','homepage','activity','settings'];
-                views.forEach(id => { const el=document.getElementById(`view-${id}`); if(el) el.classList.add('hidden'); });
+                ADMIN_VIEWS.forEach(id => { const el=document.getElementById(`view-${id}`); if(el) el.classList.add('hidden'); });
                 const target = document.getElementById(`view-${viewId}`);
                 if (target) target.classList.remove('hidden');
-                const titles = { dashboard:'Dashboard Overview', orders:'Order Management', products:'Product Catalog', categories:'Category Management', 'order-detail':'Order Details', stock:'Stock Management', discounts:'Discount Events', coupons:'Coupon & Promo Codes', customers:'Customer Database', 'customer-detail':'Customer Profile', returns:'Return Management', homepage:'Homepage Editor', activity:'Activity Log', settings:'System Settings' };
-                document.getElementById('page-title').innerText = titles[viewId] || 'Dashboard';
+                document.getElementById('page-title').innerText = ADMIN_VIEW_TITLES[viewId] || 'Dashboard';
                 if(viewId==='dashboard') { this.refreshOrders().then(() => { this.renderDashboard(); this.buildRevenueChart(); }); }
                 if(viewId==='orders') this.refreshOrders();
                 if(viewId==='products') this.renderProducts();

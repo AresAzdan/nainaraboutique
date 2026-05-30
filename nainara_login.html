@@ -239,7 +239,7 @@
 
         // Redirect if already logged in
         if (sessionStorage.getItem('nainara_token')) {
-            window.location.href = 'nainara_admin.html';
+            window.location.replace('nainara_admin.html');
         }
 
         function togglePassword() {
@@ -288,7 +288,7 @@
                         username: data.username || username,
                         role: data.role || 'Admin'
                     }));
-                    window.location.href = 'nainara_admin.html';
+                    window.location.replace('nainara_admin.html');
                 } else {
                     throw new Error(data.message || 'Invalid credentials');
                 }
