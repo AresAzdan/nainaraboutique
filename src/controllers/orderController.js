@@ -162,6 +162,7 @@ exports.createOrder = async (req, res) => {
         shippingMethod,
         phone,
         recipientName,
+        customerEmail: req.user.email || null,
       },
       client
     );
@@ -256,7 +257,7 @@ exports._createOrderNoPool = async (req, res, params) => {
     const order = await OrderModel.create({
       userId, totalAmount, items: enrichedItems,
       shippingCost, discountAmount, promoCode,
-      shippingAddress, shippingMethod, phone, recipientName,
+      shippingAddress, shippingMethod, phone, recipientName, customerEmail: req.user.email || null,
     }, db);
 
     const midtransOrderId = `NAINARA-${Date.now()}`;
@@ -349,7 +350,7 @@ exports.createGuestOrder = async (req, res) => {
     });
 
     const order = await OrderModel.create(
-      { userId: null, totalAmount, items: enrichedItems, shippingCost, discountAmount, promoCode, shippingAddress, shippingMethod, phone, recipientName },
+      { userId: null, totalAmount, items: enrichedItems, shippingCost, discountAmount, promoCode, shippingAddress, shippingMethod, phone, recipientName, customerEmail: guestEmail || null },
       client || db
     );
 

@@ -154,6 +154,7 @@ CREATE TABLE orders (
   shipping_method  VARCHAR(100),
   recipient_name   VARCHAR(100),
   phone            VARCHAR(20),
+  customer_email   VARCHAR(150),
   tracking_number  VARCHAR(100),
   tracking_courier VARCHAR(50),
   status           VARCHAR(30)    NOT NULL DEFAULT 'pending'
@@ -167,6 +168,7 @@ CREATE TABLE orders (
   return_reason    TEXT,
   delivered_at     TIMESTAMPTZ,
   admin_notified_at TIMESTAMPTZ,
+  customer_paid_email_sent_at TIMESTAMPTZ,
   created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 

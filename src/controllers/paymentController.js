@@ -2,7 +2,12 @@ const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
 const { applyResolvedStockDelta: buildResolvedStockDelta, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
-const { buildAdminOrderDetailUrl, sendAdminOrderPaidNotification } = require('../services/emailService');
+const {
+  buildAdminOrderDetailUrl,
+  buildCustomerOrderDetailUrl,
+  sendAdminOrderPaidNotification,
+  sendCustomerOrderPaidConfirmation,
+} = require('../services/emailService');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -114,6 +119,7 @@ const TERMINAL_STATUSES = [
 const FAILURE_STATUSES = ['cancelled', 'expired', 'failed'];
 
 const ADMIN_NOTIFICATION_PAYMENT_STATUSES = ['settlement', 'capture', 'paid'];
+const CUSTOMER_PAID_EMAIL_PAYMENT_STATUSES = ['settlement', 'capture', 'paid'];
 
 const getOrderItemsForUpdate = async (client, orderId) => {
   const { rows } = await client.query(
@@ -270,6 +276,33 @@ const notifyAdminForPaidOrder = async ({ orderId, adminOrderDetailUrl, paymentMe
   }
 };
 
+const notifyCustomerForPaidOrder = async ({ orderId, orderDetailUrl, paymentMethod }) => {
+  try {
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      console.error(`[Webhook] Customer email skipped: order ${orderId} not found after payment settlement.`);
+      return;
+    }
+
+    const customerEmail = order.customer_email || order.user_email;
+    if (!customerEmail) {
+      console.error(`[Webhook] Customer email skipped: order ${orderId} has no customer email address.`);
+      return;
+    }
+
+    const items = await OrderModel.getOrderItems(orderId);
+    await sendCustomerOrderPaidConfirmation({
+      to: customerEmail,
+      order: { ...order, payment_method: paymentMethod || order.payment_method, status: order.status || 'paid' },
+      items,
+      orderDetailUrl,
+    });
+    console.log(`[Webhook] Customer payment confirmation sent for order ${orderId}.`);
+  } catch (emailErr) {
+    console.error(`[Webhook] Failed to send customer payment confirmation for order ${orderId}:`, emailErr);
+  }
+};
+
 // ─── Webhook: POST /api/payments/notification ─────────────────────────────────
 // Mount WITHOUT the authenticate middleware.
 // Always returns HTTP 200 for verified non-actionable notifications. If a paid
@@ -327,7 +360,7 @@ const handleNotification = async (req, res, next) => {
       await client.query('BEGIN');
 
       const lookupResult = await client.query(
-        `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted, admin_notified_at
+        `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted, admin_notified_at, customer_paid_email_sent_at
          FROM orders
          WHERE midtrans_order_id = $1
          FOR UPDATE`,
@@ -357,6 +390,7 @@ const handleNotification = async (req, res, next) => {
 
       const result = await updateOrderForPaymentStatus({ client, orderId: order.id, targetStatus });
       let shouldSendAdminNotification = false;
+      let shouldSendCustomerEmail = false;
 
       if (
         targetStatus === 'paid' &&
@@ -372,6 +406,20 @@ const handleNotification = async (req, res, next) => {
         shouldSendAdminNotification = notifyClaim.rows.length > 0;
       }
 
+      if (
+        targetStatus === 'paid' &&
+        CUSTOMER_PAID_EMAIL_PAYMENT_STATUSES.includes(transactionStatus)
+      ) {
+        const customerEmailClaim = await client.query(
+          `UPDATE orders
+           SET customer_paid_email_sent_at = NOW()
+           WHERE id = $1 AND customer_paid_email_sent_at IS NULL
+           RETURNING customer_paid_email_sent_at`,
+          [order.id]
+        );
+        shouldSendCustomerEmail = customerEmailClaim.rows.length > 0;
+      }
+
       await client.query('COMMIT');
 
       console.log(
@@ -379,14 +427,28 @@ const handleNotification = async (req, res, next) => {
         `stock action: ${result.stockAction || 'none'} (${transactionStatus})`
       );
 
+      const host = req.get('host');
+      const requestBaseUrl = host ? `${req.protocol}://${host}` : undefined;
+      const customerBaseUrl = process.env.PUBLIC_SITE_URL || requestBaseUrl;
+
       if (shouldSendAdminNotification) {
-        const host = req.get('host');
         notifyAdminForPaidOrder({
           orderId: order.id,
           paymentMethod: paymentType,
           adminOrderDetailUrl: buildAdminOrderDetailUrl({
             orderId: order.id,
-            baseUrl: host ? `${req.protocol}://${host}` : undefined,
+            baseUrl: requestBaseUrl,
+          }),
+        });
+      }
+
+      if (shouldSendCustomerEmail) {
+        notifyCustomerForPaidOrder({
+          orderId: order.id,
+          paymentMethod: paymentType,
+          orderDetailUrl: buildCustomerOrderDetailUrl({
+            orderId: order.id,
+            baseUrl: customerBaseUrl,
           }),
         });
       }

@@ -70,6 +70,7 @@ const OrderModel = {
       shippingMethod = null,
       phone = null,
       recipientName = null,
+      customerEmail = null,
     },
     client
   ) {
@@ -78,8 +79,8 @@ const OrderModel = {
     const { rows } = await client.query(
       `INSERT INTO orders
          (user_id, total_amount, shipping_cost, discount_amount, promo_code,
-          shipping_address, shipping_method, phone, recipient_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          shipping_address, shipping_method, phone, recipient_name, customer_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         userId,
@@ -91,6 +92,7 @@ const OrderModel = {
         shippingMethod,
         phone,
         recipientName,
+        customerEmail,
       ]
     );
     const order = rows[0];
