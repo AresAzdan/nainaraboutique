@@ -6,6 +6,7 @@ const {
   buildAdminOrderDetailUrl,
   buildCustomerOrderDetailUrl,
   sendAdminOrderPaidNotification,
+  sendCustomerOrderCancelledEmail,
   sendCustomerOrderPaidConfirmation,
 } = require('../services/emailService');
 
@@ -303,6 +304,33 @@ const notifyCustomerForPaidOrder = async ({ orderId, orderDetailUrl, paymentMeth
   }
 };
 
+const notifyCustomerForCancelledOrder = async ({ orderId, orderDetailUrl }) => {
+  try {
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      console.error(`[Webhook] Customer cancelled email skipped: order ${orderId} not found.`);
+      return;
+    }
+
+    const customerEmail = order.customer_email || order.user_email;
+    if (!customerEmail) {
+      console.error(`[Webhook] Customer cancelled email skipped: order ${orderId} has no customer email address.`);
+      return;
+    }
+
+    const items = await OrderModel.getOrderItems(orderId);
+    await sendCustomerOrderCancelledEmail({
+      to: customerEmail,
+      order,
+      items,
+      orderDetailUrl,
+    });
+    console.log(`[Webhook] Customer cancellation confirmation sent for order ${orderId}.`);
+  } catch (emailErr) {
+    console.error(`[Webhook] Failed to send customer cancellation confirmation for order ${orderId}:`, emailErr);
+  }
+};
+
 // ─── Webhook: POST /api/payments/notification ─────────────────────────────────
 // Mount WITHOUT the authenticate middleware.
 // Always returns HTTP 200 for verified non-actionable notifications. If a paid
@@ -391,6 +419,7 @@ const handleNotification = async (req, res, next) => {
       const result = await updateOrderForPaymentStatus({ client, orderId: order.id, targetStatus });
       let shouldSendAdminNotification = false;
       let shouldSendCustomerEmail = false;
+      let shouldSendCustomerCancelledEmail = false;
 
       if (
         targetStatus === 'paid' &&
@@ -420,6 +449,17 @@ const handleNotification = async (req, res, next) => {
         shouldSendCustomerEmail = customerEmailClaim.rows.length > 0;
       }
 
+      if (targetStatus === 'cancelled' && order.status === 'pending') {
+        const cancelledEmailClaim = await client.query(
+          `UPDATE orders
+           SET customer_cancelled_email_sent_at = NOW()
+           WHERE id = $1 AND customer_cancelled_email_sent_at IS NULL
+           RETURNING customer_cancelled_email_sent_at`,
+          [order.id]
+        );
+        shouldSendCustomerCancelledEmail = cancelledEmailClaim.rows.length > 0;
+      }
+
       await client.query('COMMIT');
 
       console.log(
@@ -446,6 +486,16 @@ const handleNotification = async (req, res, next) => {
         notifyCustomerForPaidOrder({
           orderId: order.id,
           paymentMethod: paymentType,
+          orderDetailUrl: buildCustomerOrderDetailUrl({
+            orderId: order.id,
+            baseUrl: customerBaseUrl,
+          }),
+        });
+      }
+
+      if (shouldSendCustomerCancelledEmail) {
+        notifyCustomerForCancelledOrder({
+          orderId: order.id,
           orderDetailUrl: buildCustomerOrderDetailUrl({
             orderId: order.id,
             baseUrl: customerBaseUrl,

@@ -186,7 +186,10 @@ const requestRefund = async ({ orderId, userId, reason, refundAmount = null, poo
            refund_approved_at = NULL,
            refunded_at = NULL,
            refund_midtrans_response = NULL,
-           refund_by = NULL
+           refund_by = NULL,
+           customer_refund_requested_email_sent_at = NULL,
+           customer_refund_result_email_sent_at = NULL,
+           admin_refund_notified_at = NULL
        WHERE id = $1
          AND COALESCE(refund_status, 'none') NOT IN ('requested', 'approved', 'processing', 'refunded')
        RETURNING *`,

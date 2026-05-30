@@ -232,6 +232,233 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
   };
 };
 
+
+const getItemName = (item) => item.product_name || item.name || `Product #${item.product_id || '-'}`;
+
+const buildCompactItemRows = (items = []) => items.map((item) => `
+      <tr>
+        <td style="padding:13px 12px;border-bottom:1px solid #eadfd7;vertical-align:top;">
+          <div style="font-weight:700;color:#3b2f2f;">${escapeHtml(getItemName(item))}</div>
+          <div style="margin-top:4px;font-size:12px;color:#8a786d;">${escapeHtml(normalizeItemVariant(item))}</div>
+        </td>
+        <td style="padding:13px 12px;border-bottom:1px solid #eadfd7;text-align:center;vertical-align:top;">${escapeHtml(item.quantity || '-')}</td>
+      </tr>`).join('') || `
+      <tr><td colspan="2" style="padding:13px 12px;border-bottom:1px solid #eadfd7;">No item details available.</td></tr>`;
+
+const buildTextItemLines = (items = []) => (items.length
+  ? items.map((item) => `- ${getItemName(item)} | Qty: ${item.quantity || '-'} | Size/Color: ${normalizeItemVariant(item)}`)
+  : ['- No item details available.']);
+
+const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], items = [], ctaUrl, ctaLabel }) => {
+  const summaryHtml = summaryRows.filter((row) => row && row.value !== undefined && row.value !== null && row.value !== '').map((row) => `
+                  <tr>
+                    <td style="padding:${row.first ? '14px' : '0'} 16px 14px;color:#8a786d;width:42%;vertical-align:top;">${escapeHtml(row.label)}</td>
+                    <td style="padding:${row.first ? '14px' : '0'} 16px 14px;font-weight:700;text-align:right;color:#3b2f2f;vertical-align:top;">${escapeHtml(row.value)}</td>
+                  </tr>`).join('');
+  const itemRows = buildCompactItemRows(items);
+  const linkHtml = ctaUrl ? `
+                <div style="text-align:center;margin:28px 0 10px;">
+                  <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">${escapeHtml(ctaLabel || 'View details')}</a>
+                </div>
+                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#8a786d;text-align:center;">If the button does not work, open this link:<br><span style="word-break:break-all;">${escapeHtml(ctaUrl)}</span></p>` : '';
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>${escapeHtml(title)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preview || title)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f3ef;border-collapse:collapse;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;background:#fffdf9;border:1px solid #eadfd7;border-radius:18px;overflow:hidden;border-collapse:separate;">
+            <tr>
+              <td style="background:#8b5e3c;padding:28px 24px;text-align:center;color:#ffffff;">
+                <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;letter-spacing:1.6px;font-weight:700;">Nainara Boutique</div>
+                <div style="margin-top:8px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#f6eadf;">${escapeHtml(eyebrow)}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 24px;">
+                <h1 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;color:#3b2f2f;">${escapeHtml(title)}</h1>
+                <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5f5048;">${escapeHtml(intro)}</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fbf6ef;border:1px solid #eadfd7;border-radius:14px;margin:0 0 22px;">${summaryHtml}
+                </table>
+                <h2 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b2f2f;">Order items</h2>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:12px;overflow:hidden;margin:0 0 22px;background:#ffffff;">
+                  <thead>
+                    <tr style="background:#f3e8df;color:#5f5048;">
+                      <th align="left" style="padding:12px;font-size:13px;">Product</th>
+                      <th align="center" style="padding:12px;font-size:13px;">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>${itemRows}
+                  </tbody>
+                </table>${linkHtml}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+};
+
+const buildCustomerRefundStatusEmail = ({ order, items = [], orderDetailUrl, status, reason }) => {
+  const normalizedStatus = String(status || order.refund_status || 'requested').toLowerCase();
+  const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
+  const amount = order.refund_amount ? formatCurrency(order.refund_amount) : null;
+  const reasonText = reason || order.refund_reason || (order.refund_midtrans_response && order.refund_midtrans_response.rejection_reason) || null;
+  const titleByStatus = {
+    requested: `Refund request received for order #${order.id}`,
+    refunded: `Refund approved for order #${order.id}`,
+    approved: `Refund approved for order #${order.id}`,
+    rejected: `Refund request update for order #${order.id}`,
+  };
+  const introByStatus = {
+    requested: `Hi ${customerName}, we have received your refund request and our team will review it shortly.`,
+    refunded: `Hi ${customerName}, your refund has been approved and submitted successfully.`,
+    approved: `Hi ${customerName}, your refund has been approved and submitted successfully.`,
+    rejected: `Hi ${customerName}, we have reviewed your refund request and cannot approve it at this time.`,
+  };
+  const rows = [
+    { label: 'Order ID', value: `#${order.id}`, first: true },
+    { label: 'Refund Status', value: normalizedStatus },
+    amount && { label: 'Refund Amount', value: amount },
+    reasonText && { label: normalizedStatus === 'rejected' ? 'Rejection Reason' : 'Refund Reason', value: reasonText },
+  ];
+  const htmlContent = buildBoutiqueEmail({
+    title: titleByStatus[normalizedStatus] || `Refund update for order #${order.id}`,
+    eyebrow: 'Refund Update',
+    preview: `Refund status: ${normalizedStatus}`,
+    intro: introByStatus[normalizedStatus] || `Hi ${customerName}, there is an update to your refund request.`,
+    summaryRows: rows,
+    items,
+    ctaUrl: orderDetailUrl,
+    ctaLabel: 'View order details',
+  });
+  const textContent = [
+    'Nainara Boutique - Refund Update',
+    introByStatus[normalizedStatus] || `Hi ${customerName}, there is an update to your refund request.`,
+    `Order ID: #${order.id}`,
+    `Refund status: ${normalizedStatus}`,
+    amount ? `Refund amount: ${amount}` : null,
+    reasonText ? `${normalizedStatus === 'rejected' ? 'Rejection' : 'Refund'} reason: ${reasonText}` : null,
+    'Items:',
+    ...buildTextItemLines(items),
+    `Order detail: ${orderDetailUrl}`,
+  ].filter(Boolean).join('\n');
+  return { subject: titleByStatus[normalizedStatus] || `Refund update for order #${order.id}`, htmlContent, textContent };
+};
+
+const buildCustomerOrderCancelledEmail = ({ order, items = [], orderDetailUrl }) => {
+  const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
+  const htmlContent = buildBoutiqueEmail({
+    title: `Order #${order.id} has been cancelled`,
+    eyebrow: 'Order Cancelled',
+    preview: `Your Nainara Boutique order #${order.id} has been cancelled.`,
+    intro: `Hi ${customerName}, this email confirms that your unpaid/pending order has been cancelled. No further action is required.`,
+    summaryRows: [
+      { label: 'Order ID', value: `#${order.id}`, first: true },
+      { label: 'Order Status', value: 'cancelled' },
+      { label: 'Order Total', value: formatCurrency(order.total_amount) },
+    ],
+    items,
+    ctaUrl: orderDetailUrl,
+    ctaLabel: 'View order details',
+  });
+  const textContent = [
+    'Nainara Boutique - Order Cancelled',
+    `Hi ${customerName}, this confirms that your unpaid/pending order #${order.id} has been cancelled.`,
+    `Order total: ${formatCurrency(order.total_amount)}`,
+    'Items:',
+    ...buildTextItemLines(items),
+    `Order detail: ${orderDetailUrl}`,
+  ].join('\n');
+  return { subject: `Order #${order.id} has been cancelled`, htmlContent, textContent };
+};
+
+const buildCustomerOrderShippedEmail = ({ order, items = [], orderDetailUrl }) => {
+  const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
+  const htmlContent = buildBoutiqueEmail({
+    title: `Order #${order.id} is on the way`,
+    eyebrow: 'Order Shipped',
+    preview: `Courier: ${order.tracking_courier || '-'}; tracking number: ${order.tracking_number || '-'}`,
+    intro: `Hi ${customerName}, your order has been shipped. You can use the courier and tracking number below to follow the delivery.`,
+    summaryRows: [
+      { label: 'Order ID', value: `#${order.id}`, first: true },
+      { label: 'Courier', value: order.tracking_courier || '-' },
+      { label: 'Tracking Number', value: order.tracking_number || '-' },
+    ],
+    items,
+    ctaUrl: orderDetailUrl,
+    ctaLabel: 'View order details',
+  });
+  const textContent = [
+    'Nainara Boutique - Order Shipped',
+    `Hi ${customerName}, your order #${order.id} has been shipped.`,
+    `Courier: ${order.tracking_courier || '-'}`,
+    `Tracking number: ${order.tracking_number || '-'}`,
+    'Items:',
+    ...buildTextItemLines(items),
+    `Order detail: ${orderDetailUrl}`,
+  ].join('\n');
+  return { subject: `Order #${order.id} is on the way`, htmlContent, textContent };
+};
+
+const buildAdminRefundRequestEmail = ({ order, items = [], adminOrderDetailUrl }) => {
+  const customerName = order.recipient_name || order.user_name || 'Customer';
+  const customerEmail = order.customer_email || order.user_email || '-';
+  const customerPhone = order.phone || '-';
+  const itemRows = buildCompactItemRows(items);
+  const htmlContent = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
+    <div style="max-width:680px;margin:0 auto;padding:24px;">
+      <div style="background:#fffdf9;border-radius:16px;overflow:hidden;border:1px solid #eadfd7;">
+        <div style="background:#8b5e3c;color:#ffffff;padding:24px;">
+          <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.3;">Refund Request Submitted</h1>
+          <p style="margin:8px 0 0;font-size:14px;opacity:.9;">Order #${escapeHtml(order.id)} needs admin review.</p>
+        </div>
+        <div style="padding:24px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 20px;">
+            <tr><td style="padding:8px 0;color:#7a6a61;width:180px;">Order ID</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(order.id)}</td></tr>
+            <tr><td style="padding:8px 0;color:#7a6a61;">Customer</td><td style="padding:8px 0;">${escapeHtml(customerName)}</td></tr>
+            <tr><td style="padding:8px 0;color:#7a6a61;">Email</td><td style="padding:8px 0;">${escapeHtml(customerEmail)}</td></tr>
+            <tr><td style="padding:8px 0;color:#7a6a61;">Phone</td><td style="padding:8px 0;">${escapeHtml(customerPhone)}</td></tr>
+            <tr><td style="padding:8px 0;color:#7a6a61;">Refund Reason</td><td style="padding:8px 0;white-space:pre-line;">${escapeHtml(order.refund_reason || '-')}</td></tr>
+            <tr><td style="padding:8px 0;color:#7a6a61;">Total Amount</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
+          </table>
+          <h2 style="font-size:18px;margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;">Items</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+            <thead><tr style="background:#f3e8df;"><th align="left" style="padding:10px 12px;">Item</th><th align="center" style="padding:10px 12px;">Qty</th></tr></thead>
+            <tbody>${itemRows}
+            </tbody>
+          </table>
+          <a href="${escapeHtml(adminOrderDetailUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;">Open admin order detail</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+  const textContent = [
+    `Refund request submitted for order #${order.id}`,
+    `Customer: ${customerName}`,
+    `Email: ${customerEmail}`,
+    `Phone: ${customerPhone}`,
+    `Refund reason: ${order.refund_reason || '-'}`,
+    `Total amount: ${formatCurrency(order.total_amount)}`,
+    'Items:',
+    ...buildTextItemLines(items),
+    `Admin order detail: ${adminOrderDetailUrl}`,
+  ].join('\n');
+  return { subject: `Refund request for order #${order.id}`, htmlContent, textContent };
+};
+
 const sendCustomerOrderPaidConfirmation = async ({ to, order, items, orderDetailUrl, env = process.env, fetchImpl }) => {
   const email = buildCustomerOrderPaidEmail({ order, items, orderDetailUrl });
   return sendTransactionalEmail({
@@ -242,6 +469,27 @@ const sendCustomerOrderPaidConfirmation = async ({ to, order, items, orderDetail
     env,
     fetchImpl,
   });
+};
+
+
+const sendCustomerRefundStatusEmail = async ({ to, order, items, orderDetailUrl, status, reason, env = process.env, fetchImpl }) => {
+  const email = buildCustomerRefundStatusEmail({ order, items, orderDetailUrl, status, reason });
+  return sendTransactionalEmail({ to, subject: email.subject, htmlContent: email.htmlContent, textContent: email.textContent, env, fetchImpl });
+};
+
+const sendCustomerOrderCancelledEmail = async ({ to, order, items, orderDetailUrl, env = process.env, fetchImpl }) => {
+  const email = buildCustomerOrderCancelledEmail({ order, items, orderDetailUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, htmlContent: email.htmlContent, textContent: email.textContent, env, fetchImpl });
+};
+
+const sendCustomerOrderShippedEmail = async ({ to, order, items, orderDetailUrl, env = process.env, fetchImpl }) => {
+  const email = buildCustomerOrderShippedEmail({ order, items, orderDetailUrl });
+  return sendTransactionalEmail({ to, subject: email.subject, htmlContent: email.htmlContent, textContent: email.textContent, env, fetchImpl });
+};
+
+const sendAdminRefundRequestNotification = async ({ order, items, adminOrderDetailUrl, env = process.env, fetchImpl }) => {
+  const email = buildAdminRefundRequestEmail({ order, items, adminOrderDetailUrl });
+  return sendTransactionalEmail({ to: env.ADMIN_NOTIFICATION_EMAIL, subject: email.subject, htmlContent: email.htmlContent, textContent: email.textContent, env, fetchImpl });
 };
 
 const sendTransactionalEmail = async ({ to, subject, htmlContent, textContent, env = process.env, fetchImpl = globalThis.fetch }) => {
@@ -296,12 +544,20 @@ module.exports = {
   BREVO_SEND_EMAIL_URL,
   buildAdminOrderDetailUrl,
   buildAdminOrderPaidEmail,
+  buildAdminRefundRequestEmail,
+  buildCustomerOrderCancelledEmail,
   buildCustomerOrderDetailUrl,
   buildCustomerOrderPaidEmail,
+  buildCustomerOrderShippedEmail,
+  buildCustomerRefundStatusEmail,
   escapeHtml,
   formatCurrency,
   getMissingEmailEnv,
   sendAdminOrderPaidNotification,
+  sendAdminRefundRequestNotification,
+  sendCustomerOrderCancelledEmail,
   sendCustomerOrderPaidConfirmation,
+  sendCustomerOrderShippedEmail,
+  sendCustomerRefundStatusEmail,
   sendTransactionalEmail,
 };
