@@ -166,6 +166,7 @@ CREATE TABLE orders (
   stock_deducted   BOOLEAN        NOT NULL DEFAULT false,
   return_reason    TEXT,
   delivered_at     TIMESTAMPTZ,
+  admin_notified_at TIMESTAMPTZ,
   created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
