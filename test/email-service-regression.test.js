@@ -3,8 +3,11 @@ const {
   BREVO_SEND_EMAIL_URL,
   buildAdminOrderDetailUrl,
   buildAdminOrderPaidEmail,
+  buildCustomerOrderDetailUrl,
+  buildCustomerOrderPaidEmail,
   getMissingEmailEnv,
   sendAdminOrderPaidNotification,
+  sendCustomerOrderPaidConfirmation,
 } = require('../src/services/emailService');
 
 const env = {
@@ -20,6 +23,10 @@ assert.strictEqual(
   buildAdminOrderDetailUrl({ orderId: 42, baseUrl: 'https://api.example.test/' }),
   'https://api.example.test/api/admin/orders/42'
 );
+assert.strictEqual(
+  buildCustomerOrderDetailUrl({ orderId: 42, baseUrl: 'https://nainaraboutique.example/' }),
+  'https://nainaraboutique.example/#order-detail?id=42'
+);
 
 const order = {
   id: 42,
@@ -29,10 +36,12 @@ const order = {
   total_amount: '305000.00',
   payment_method: 'bank_transfer',
   shipping_address: 'Jl. Melati 1\nBandung',
+  status: 'paid',
+  customer_email: 'nadia@example.test',
 };
 const items = [
-  { product_id: 101, product_name: 'Cheesy Dress', quantity: 2, size: 'L', color: 'Brown' },
-  { product_id: 202, product_name: 'Pearl Brooch', quantity: 1, size: null, color: 'Ivory' },
+  { product_id: 101, product_name: 'Cheesy Dress', quantity: 2, price: 125000, size: 'L', color: 'Brown' },
+  { product_id: 202, product_name: 'Pearl Brooch', quantity: 1, price: 50000, size: null, color: 'Ivory' },
 ];
 
 const builtEmail = buildAdminOrderPaidEmail({
@@ -45,6 +54,20 @@ assert.ok(builtEmail.htmlContent.includes('Nadia &lt;Admin&gt;'), 'HTML email mu
 assert.ok(builtEmail.htmlContent.includes('Cheesy Dress'));
 assert.ok(builtEmail.textContent.includes('Qty: 2 | Size/Color: L / Brown'));
 assert.ok(builtEmail.textContent.includes('Rp\u00a0305.000'));
+
+const builtCustomerEmail = buildCustomerOrderPaidEmail({
+  order,
+  items,
+  orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+});
+assert.strictEqual(builtCustomerEmail.subject, 'Payment confirmed for order #42');
+assert.ok(builtCustomerEmail.htmlContent.includes('Nainara Boutique'));
+assert.ok(builtCustomerEmail.htmlContent.includes('Payment Confirmed'));
+assert.ok(builtCustomerEmail.htmlContent.includes('Nadia &lt;Admin&gt;'), 'Customer HTML email must escape recipient text');
+assert.ok(builtCustomerEmail.htmlContent.includes('Rp 250.000'), 'Customer HTML email must include item subtotals');
+assert.ok(builtCustomerEmail.textContent.includes('Payment status: paid'));
+assert.ok(builtCustomerEmail.textContent.includes('Size: L | Color: Brown | Subtotal: Rp 250.000'));
+assert.ok(builtCustomerEmail.textContent.includes('Order detail: https://nainaraboutique.example/#order-detail?id=42'));
 
 let capturedRequest;
 const fakeFetch = async (url, options) => {
@@ -74,6 +97,22 @@ sendAdminOrderPaidNotification({
   assert.strictEqual(payload.subject, 'New paid order #42');
   assert.ok(payload.htmlContent.includes('Open admin order detail'));
   assert.ok(payload.textContent.includes('Admin order detail: https://api.example.test/api/admin/orders/42'));
+
+  return sendCustomerOrderPaidConfirmation({
+    to: order.customer_email,
+    order,
+    items,
+    orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+    env,
+    fetchImpl: fakeFetch,
+  });
+}).then((response) => {
+  assert.deepStrictEqual(response, { messageId: '<test-message-id@example.test>' });
+  const payload = JSON.parse(capturedRequest.options.body);
+  assert.deepStrictEqual(payload.to, [{ email: order.customer_email }]);
+  assert.strictEqual(payload.subject, 'Payment confirmed for order #42');
+  assert.ok(payload.htmlContent.includes('View order details'));
+  assert.ok(payload.textContent.includes('Nainara Boutique - Payment Confirmed'));
 
   return sendAdminOrderPaidNotification({
     order,
