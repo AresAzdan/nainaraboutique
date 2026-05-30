@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "node test/pricing-regression.test.js && node test/midtrans-payload-regression.test.js && node test/stock-protection-regression.test.js && node test/refund-flow.test.js && node test/order-refund-ui-regression.test.js && node test/shipment-tracking-regression.test.js && node test/admin-history-regression.test.js"
+    "test": "node test/pricing-regression.test.js && node test/midtrans-payload-regression.test.js && node test/email-service-regression.test.js && node test/stock-protection-regression.test.js && node test/refund-flow.test.js && node test/order-refund-ui-regression.test.js && node test/shipment-tracking-regression.test.js && node test/admin-history-regression.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

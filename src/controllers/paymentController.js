@@ -2,6 +2,7 @@ const snap = require('../config/midtrans');
 const OrderModel = require('../models/orderModel');
 const db = require('../config/db');
 const { applyResolvedStockDelta: buildResolvedStockDelta, resolveAvailableStock, validateOrderStock } = require('../utils/stockProtection');
+const { buildAdminOrderDetailUrl, sendAdminOrderPaidNotification } = require('../services/emailService');
 
 // ─── Snap creation ────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ const createPayment = async (req, res, next) => {
 const resolveOrderStatus = (transactionStatus, fraudStatus) => {
   switch (transactionStatus) {
     case 'settlement':
+    case 'paid':
       return 'paid';
 
     case 'capture':
@@ -110,6 +112,8 @@ const TERMINAL_STATUSES = [
 ];
 
 const FAILURE_STATUSES = ['cancelled', 'expired', 'failed'];
+
+const ADMIN_NOTIFICATION_PAYMENT_STATUSES = ['settlement', 'capture', 'paid'];
 
 const getOrderItemsForUpdate = async (client, orderId) => {
   const { rows } = await client.query(
@@ -245,6 +249,27 @@ const updateOrderForPaymentStatus = async ({ client, orderId, targetStatus }) =>
   return { action: 'updated', previousStatus, targetStatus, stockAction };
 };
 
+
+const notifyAdminForPaidOrder = async ({ orderId, adminOrderDetailUrl, paymentMethod }) => {
+  try {
+    const order = await OrderModel.findById(orderId);
+    if (!order) {
+      console.error(`[Webhook] Admin email skipped: order ${orderId} not found after payment settlement.`);
+      return;
+    }
+
+    const items = await OrderModel.getOrderItems(orderId);
+    await sendAdminOrderPaidNotification({
+      order: { ...order, payment_method: paymentMethod || order.payment_method },
+      items,
+      adminOrderDetailUrl,
+    });
+    console.log(`[Webhook] Admin paid-order notification sent for order ${orderId}.`);
+  } catch (emailErr) {
+    console.error(`[Webhook] Failed to send admin paid-order notification for order ${orderId}:`, emailErr);
+  }
+};
+
 // ─── Webhook: POST /api/payments/notification ─────────────────────────────────
 // Mount WITHOUT the authenticate middleware.
 // Always returns HTTP 200 for verified non-actionable notifications. If a paid
@@ -274,6 +299,7 @@ const handleNotification = async (req, res, next) => {
       order_id: rawOrderId,
       transaction_status: transactionStatus,
       fraud_status: fraudStatus,
+      payment_type: paymentType,
     } = notification;
 
     console.log(
@@ -301,7 +327,7 @@ const handleNotification = async (req, res, next) => {
       await client.query('BEGIN');
 
       const lookupResult = await client.query(
-        `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted
+        `SELECT id, status, COALESCE(stock_deducted, false) AS stock_deducted, admin_notified_at
          FROM orders
          WHERE midtrans_order_id = $1
          FOR UPDATE`,
@@ -330,6 +356,21 @@ const handleNotification = async (req, res, next) => {
       }
 
       const result = await updateOrderForPaymentStatus({ client, orderId: order.id, targetStatus });
+      let shouldSendAdminNotification = false;
+
+      if (
+        targetStatus === 'paid' &&
+        ADMIN_NOTIFICATION_PAYMENT_STATUSES.includes(transactionStatus)
+      ) {
+        const notifyClaim = await client.query(
+          `UPDATE orders
+           SET admin_notified_at = NOW()
+           WHERE id = $1 AND admin_notified_at IS NULL
+           RETURNING admin_notified_at`,
+          [order.id]
+        );
+        shouldSendAdminNotification = notifyClaim.rows.length > 0;
+      }
 
       await client.query('COMMIT');
 
@@ -337,6 +378,18 @@ const handleNotification = async (req, res, next) => {
         `[Webhook] Order ${order.id}: ${result.previousStatus || order.status} → ${targetStatus}; ` +
         `stock action: ${result.stockAction || 'none'} (${transactionStatus})`
       );
+
+      if (shouldSendAdminNotification) {
+        const host = req.get('host');
+        notifyAdminForPaidOrder({
+          orderId: order.id,
+          paymentMethod: paymentType,
+          adminOrderDetailUrl: buildAdminOrderDetailUrl({
+            orderId: order.id,
+            baseUrl: host ? `${req.protocol}://${host}` : undefined,
+          }),
+        });
+      }
 
       return res.status(200).json({
         message: `Order ${order.id} ${result.action}.`,
