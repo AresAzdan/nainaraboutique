@@ -3,11 +3,18 @@ const {
   BREVO_SEND_EMAIL_URL,
   buildAdminOrderDetailUrl,
   buildAdminOrderPaidEmail,
+  buildAdminRefundRequestEmail,
+  buildCustomerOrderCancelledEmail,
   buildCustomerOrderDetailUrl,
   buildCustomerOrderPaidEmail,
+  buildCustomerOrderShippedEmail,
+  buildCustomerRefundStatusEmail,
   getMissingEmailEnv,
   sendAdminOrderPaidNotification,
+  sendAdminRefundRequestNotification,
   sendCustomerOrderPaidConfirmation,
+  sendCustomerOrderShippedEmail,
+  sendCustomerRefundStatusEmail,
 } = require('../src/services/emailService');
 
 const env = {
@@ -69,6 +76,53 @@ assert.ok(builtCustomerEmail.textContent.includes('Payment status: paid'));
 assert.ok(builtCustomerEmail.textContent.includes('Size: L | Color: Brown | Subtotal: Rp 250.000'));
 assert.ok(builtCustomerEmail.textContent.includes('Order detail: https://nainaraboutique.example/#order-detail?id=42'));
 
+const builtRefundRequestedEmail = buildCustomerRefundStatusEmail({
+  order: { ...order, refund_status: 'requested', refund_amount: '125000.00', refund_reason: 'Wrong size <ordered>' },
+  items,
+  status: 'requested',
+  orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+});
+assert.strictEqual(builtRefundRequestedEmail.subject, 'Refund request received for order #42');
+assert.ok(builtRefundRequestedEmail.htmlContent.includes('Wrong size &lt;ordered&gt;'));
+assert.ok(builtRefundRequestedEmail.textContent.includes('Refund status: requested'));
+assert.ok(builtRefundRequestedEmail.textContent.includes('Refund amount: Rp\u00a0125.000'));
+
+const builtRefundRejectedEmail = buildCustomerRefundStatusEmail({
+  order: { ...order, refund_status: 'rejected', refund_amount: '125000.00', refund_midtrans_response: { rejection_reason: 'Outside policy window' } },
+  items,
+  status: 'rejected',
+  orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+});
+assert.strictEqual(builtRefundRejectedEmail.subject, 'Refund request update for order #42');
+assert.ok(builtRefundRejectedEmail.textContent.includes('Rejection reason: Outside policy window'));
+
+const builtCancelledEmail = buildCustomerOrderCancelledEmail({
+  order,
+  items,
+  orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+});
+assert.strictEqual(builtCancelledEmail.subject, 'Order #42 has been cancelled');
+assert.ok(builtCancelledEmail.textContent.includes('has been cancelled'));
+
+const builtShippedEmail = buildCustomerOrderShippedEmail({
+  order: { ...order, tracking_courier: 'JNE', tracking_number: 'JP1234567890' },
+  items,
+  orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+});
+assert.strictEqual(builtShippedEmail.subject, 'Order #42 is on the way');
+assert.ok(builtShippedEmail.textContent.includes('Courier: JNE'));
+assert.ok(builtShippedEmail.textContent.includes('Tracking number: JP1234567890'));
+
+const builtAdminRefundEmail = buildAdminRefundRequestEmail({
+  order: { ...order, refund_reason: 'Damaged item' },
+  items,
+  adminOrderDetailUrl: 'https://api.example.test/api/admin/orders/42',
+});
+assert.strictEqual(builtAdminRefundEmail.subject, 'Refund request for order #42');
+assert.ok(builtAdminRefundEmail.textContent.includes('Email: nadia@example.test'));
+assert.ok(builtAdminRefundEmail.textContent.includes('Phone: +628123456789'));
+assert.ok(builtAdminRefundEmail.textContent.includes('Refund reason: Damaged item'));
+
 let capturedRequest;
 const fakeFetch = async (url, options) => {
   capturedRequest = { url, options };
@@ -113,6 +167,45 @@ sendAdminOrderPaidNotification({
   assert.strictEqual(payload.subject, 'Payment confirmed for order #42');
   assert.ok(payload.htmlContent.includes('View order details'));
   assert.ok(payload.textContent.includes('Nainara Boutique - Payment Confirmed'));
+
+  return sendCustomerOrderShippedEmail({
+    to: order.customer_email,
+    order: { ...order, tracking_courier: 'JNE', tracking_number: 'JP1234567890' },
+    items,
+    orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+    env,
+    fetchImpl: fakeFetch,
+  });
+}).then(() => {
+  let payload = JSON.parse(capturedRequest.options.body);
+  assert.strictEqual(payload.subject, 'Order #42 is on the way');
+  assert.ok(payload.textContent.includes('Tracking number: JP1234567890'));
+
+  return sendCustomerRefundStatusEmail({
+    to: order.customer_email,
+    order: { ...order, refund_status: 'refunded', refund_amount: '125000.00', refund_reason: 'Damaged item' },
+    items,
+    status: 'refunded',
+    orderDetailUrl: 'https://nainaraboutique.example/#order-detail?id=42',
+    env,
+    fetchImpl: fakeFetch,
+  });
+}).then(() => {
+  let payload = JSON.parse(capturedRequest.options.body);
+  assert.strictEqual(payload.subject, 'Refund approved for order #42');
+  assert.ok(payload.textContent.includes('Refund status: refunded'));
+
+  return sendAdminRefundRequestNotification({
+    order: { ...order, refund_reason: 'Damaged item' },
+    items,
+    adminOrderDetailUrl: 'https://api.example.test/api/admin/orders/42',
+    env,
+    fetchImpl: fakeFetch,
+  });
+}).then(() => {
+  const payload = JSON.parse(capturedRequest.options.body);
+  assert.deepStrictEqual(payload.to, [{ email: env.ADMIN_NOTIFICATION_EMAIL }]);
+  assert.strictEqual(payload.subject, 'Refund request for order #42');
 
   return sendAdminOrderPaidNotification({
     order,

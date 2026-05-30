@@ -169,6 +169,20 @@ CREATE TABLE orders (
   delivered_at     TIMESTAMPTZ,
   admin_notified_at TIMESTAMPTZ,
   customer_paid_email_sent_at TIMESTAMPTZ,
+  customer_refund_requested_email_sent_at TIMESTAMPTZ,
+  customer_refund_result_email_sent_at TIMESTAMPTZ,
+  customer_cancelled_email_sent_at TIMESTAMPTZ,
+  customer_shipped_email_sent_at TIMESTAMPTZ,
+  admin_refund_notified_at TIMESTAMPTZ,
+  refund_status VARCHAR(20) NOT NULL DEFAULT 'none'
+    CHECK (refund_status IN ('none', 'requested', 'approved', 'rejected', 'processing', 'refunded', 'failed')),
+  refund_reason TEXT,
+  refund_amount NUMERIC(10, 2) CHECK (refund_amount IS NULL OR refund_amount >= 0),
+  refund_requested_at TIMESTAMPTZ,
+  refund_approved_at TIMESTAMPTZ,
+  refunded_at TIMESTAMPTZ,
+  refund_midtrans_response JSONB,
+  refund_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 

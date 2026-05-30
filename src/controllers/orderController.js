@@ -5,6 +5,14 @@ const ProductModel = require('../models/productModel');
 const { buildPricedOrderItems, calculateOrderTotal, buildMidtransSnapPayload } = require('../utils/orderPricing');
 const { validateOrderStock } = require('../utils/stockProtection');
 const refundService = require('../services/refundService');
+const {
+  buildAdminOrderDetailUrl,
+  buildCustomerOrderDetailUrl,
+  sendAdminRefundRequestNotification,
+  sendCustomerOrderCancelledEmail,
+  sendCustomerOrderShippedEmail,
+  sendCustomerRefundStatusEmail,
+} = require('../services/emailService');
 
 // ─── Midtrans snap client ────────────────────────────────────────────────────
 const snap = new midtransClient.Snap({
@@ -60,6 +68,162 @@ function mapMidtransStatus(transactionStatus, fraudStatus) {
       return 'pending';
   }
 }
+
+
+const getRequestBaseUrl = (req) => {
+  if (!req || typeof req.get !== 'function') return undefined;
+  const host = req.get('host');
+  return host ? `${req.protocol}://${host}` : undefined;
+};
+
+const getCustomerOrderDetailUrl = (req, orderId) => buildCustomerOrderDetailUrl({
+  orderId,
+  baseUrl: process.env.PUBLIC_SITE_URL || getRequestBaseUrl(req),
+});
+
+const getAdminOrderDetailUrl = (req, orderId) => buildAdminOrderDetailUrl({
+  orderId,
+  baseUrl: getRequestBaseUrl(req),
+});
+
+const getCustomerEmail = (order) => order && (order.customer_email || order.user_email);
+
+const claimOrderEmail = async (orderId, columnName) => {
+  const allowedColumns = new Set([
+    'customer_refund_requested_email_sent_at',
+    'customer_refund_result_email_sent_at',
+    'customer_cancelled_email_sent_at',
+    'customer_shipped_email_sent_at',
+    'admin_refund_notified_at',
+  ]);
+  if (!allowedColumns.has(columnName)) {
+    throw new Error(`Unsupported order email claim column: ${columnName}`);
+  }
+  const { rows } = await db.query(
+    `UPDATE orders
+     SET ${columnName} = NOW()
+     WHERE id = $1 AND ${columnName} IS NULL
+     RETURNING ${columnName}`,
+    [orderId]
+  );
+  return rows.length > 0;
+};
+
+const getOrderAndItemsForEmail = async (orderId) => {
+  const order = await OrderModel.findById(orderId);
+  if (!order) return { order: null, items: [] };
+  const items = await OrderModel.getOrderItems(orderId);
+  return { order, items };
+};
+
+const extractRejectionReason = (order) => {
+  const response = order && order.refund_midtrans_response;
+  if (!response) return null;
+  if (typeof response === 'string') {
+    try {
+      return JSON.parse(response).rejection_reason || null;
+    } catch (_err) {
+      return null;
+    }
+  }
+  return response.rejection_reason || null;
+};
+
+const notifyCustomerRefund = async ({ req, orderId, status, claimColumn, reason }) => {
+  try {
+    const shouldSend = await claimOrderEmail(orderId, claimColumn);
+    if (!shouldSend) return;
+    const { order, items } = await getOrderAndItemsForEmail(orderId);
+    if (!order) {
+      console.error(`[OrderEmail] Customer refund email skipped: order ${orderId} not found.`);
+      return;
+    }
+    const to = getCustomerEmail(order);
+    if (!to) {
+      console.error(`[OrderEmail] Customer refund email skipped: order ${orderId} has no customer email.`);
+      return;
+    }
+    await sendCustomerRefundStatusEmail({
+      to,
+      order,
+      items,
+      status,
+      reason,
+      orderDetailUrl: getCustomerOrderDetailUrl(req, orderId),
+    });
+  } catch (err) {
+    console.error(`[OrderEmail] Failed to send customer refund email for order ${orderId}:`, err);
+  }
+};
+
+const notifyAdminRefundRequest = async ({ req, orderId }) => {
+  try {
+    const shouldSend = await claimOrderEmail(orderId, 'admin_refund_notified_at');
+    if (!shouldSend) return;
+    const { order, items } = await getOrderAndItemsForEmail(orderId);
+    if (!order) {
+      console.error(`[OrderEmail] Admin refund email skipped: order ${orderId} not found.`);
+      return;
+    }
+    await sendAdminRefundRequestNotification({
+      order,
+      items,
+      adminOrderDetailUrl: getAdminOrderDetailUrl(req, orderId),
+    });
+  } catch (err) {
+    console.error(`[OrderEmail] Failed to send admin refund email for order ${orderId}:`, err);
+  }
+};
+
+const notifyCustomerCancelledOrder = async ({ req, orderId }) => {
+  try {
+    const shouldSend = await claimOrderEmail(orderId, 'customer_cancelled_email_sent_at');
+    if (!shouldSend) return;
+    const { order, items } = await getOrderAndItemsForEmail(orderId);
+    if (!order) {
+      console.error(`[OrderEmail] Cancelled email skipped: order ${orderId} not found.`);
+      return;
+    }
+    const to = getCustomerEmail(order);
+    if (!to) {
+      console.error(`[OrderEmail] Cancelled email skipped: order ${orderId} has no customer email.`);
+      return;
+    }
+    await sendCustomerOrderCancelledEmail({
+      to,
+      order,
+      items,
+      orderDetailUrl: getCustomerOrderDetailUrl(req, orderId),
+    });
+  } catch (err) {
+    console.error(`[OrderEmail] Failed to send cancelled email for order ${orderId}:`, err);
+  }
+};
+
+const notifyCustomerShippedOrder = async ({ req, orderId }) => {
+  try {
+    const shouldSend = await claimOrderEmail(orderId, 'customer_shipped_email_sent_at');
+    if (!shouldSend) return;
+    const { order, items } = await getOrderAndItemsForEmail(orderId);
+    if (!order) {
+      console.error(`[OrderEmail] Shipped email skipped: order ${orderId} not found.`);
+      return;
+    }
+    const to = getCustomerEmail(order);
+    if (!to) {
+      console.error(`[OrderEmail] Shipped email skipped: order ${orderId} has no customer email.`);
+      return;
+    }
+    await sendCustomerOrderShippedEmail({
+      to,
+      order,
+      items,
+      orderDetailUrl: getCustomerOrderDetailUrl(req, orderId),
+    });
+  } catch (err) {
+    console.error(`[OrderEmail] Failed to send shipped email for order ${orderId}:`, err);
+  }
+};
 
 // ─── Pool resolver ────────────────────────────────────────────────────────────
 // Supports both { pool } and { query } export shapes from db config.
@@ -457,6 +621,7 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: `Cannot cancel an order with status "${order.status}"` });
     }
     const updated = await OrderModel.updateStatus(order.id, 'cancelled');
+    await notifyCustomerCancelledOrder({ req, orderId: order.id });
     return res.json({ order: updated });
   } catch (err) {
     console.error('[cancelOrder]', err);
@@ -474,6 +639,15 @@ exports.requestRefund = async (req, res) => {
       reason: req.body.reason,
       refundAmount: req.body.refundAmount ?? req.body.refund_amount,
     });
+    await Promise.all([
+      notifyCustomerRefund({
+        req,
+        orderId: order.id,
+        status: 'requested',
+        claimColumn: 'customer_refund_requested_email_sent_at',
+      }),
+      notifyAdminRefundRequest({ req, orderId: order.id }),
+    ]);
     return res.status(201).json({ order });
   } catch (err) {
     console.error('[requestRefund]', err);
@@ -531,6 +705,9 @@ exports.adminUpdateOrderStatus = async (req, res) => {
       trackingNumber,
       trackingCourier,
     });
+    if (status === 'shipped' && updated && updated.tracking_number && updated.tracking_courier) {
+      await notifyCustomerShippedOrder({ req, orderId: updated.id });
+    }
     return res.json({ order: updated });
   } catch (err) {
     console.error('[adminUpdateOrderStatus]', err);
@@ -548,6 +725,12 @@ exports.adminReviewRefund = async (req, res) => {
         orderId: req.params.id,
         adminId: req.user.id,
       });
+      await notifyCustomerRefund({
+        req,
+        orderId: order.id,
+        status: 'refunded',
+        claimColumn: 'customer_refund_result_email_sent_at',
+      });
       return res.json({ order });
     }
 
@@ -556,6 +739,13 @@ exports.adminReviewRefund = async (req, res) => {
         orderId: req.params.id,
         adminId: req.user.id,
         reason: req.body.reason,
+      });
+      await notifyCustomerRefund({
+        req,
+        orderId: order.id,
+        status: 'rejected',
+        claimColumn: 'customer_refund_result_email_sent_at',
+        reason: req.body.reason || extractRejectionReason(order),
       });
       return res.json({ order });
     }
