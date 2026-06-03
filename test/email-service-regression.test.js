@@ -51,6 +51,22 @@ const items = [
   { product_id: 202, product_name: 'Pearl Brooch', quantity: 1, price: 50000, size: null, color: 'Ivory' },
 ];
 
+const assertMobileResponsiveBrandTemplate = (htmlContent, label) => {
+  assert.ok(htmlContent.includes('background:#FAF8F5'), `${label} must use Nainara main background`);
+  assert.ok(htmlContent.includes('background:#5D5340'), `${label} must use Nainara accent color`);
+  assert.ok(htmlContent.includes('#ebe4da'), `${label} must use Nainara secondary color`);
+  assert.ok(htmlContent.includes('max-width:600px'), `${label} must cap the email shell at 600px`);
+  assert.ok(htmlContent.includes('width:100%'), `${label} must keep the shell fluid on mobile`);
+  assert.ok(htmlContent.includes('@media only screen and (max-width: 600px)'), `${label} must include mobile-safe responsive CSS`);
+  assert.ok(htmlContent.includes('class="content-pad"'), `${label} must expose mobile content padding hooks`);
+  assert.ok(htmlContent.includes('class="email-title"'), `${label} must expose mobile heading size hooks`);
+  assert.ok(htmlContent.includes('class="item-table"'), `${label} must expose mobile item-table hooks`);
+  assert.ok(htmlContent.includes('table-layout:fixed'), `${label} item table must use fixed layout to avoid overflow`);
+  assert.ok(!htmlContent.includes('#8b5e3c'), `${label} must not use the old accent color`);
+  assert.ok(!htmlContent.includes('#f8f3ef'), `${label} must not use the old background color`);
+  assert.ok(!htmlContent.includes('max-width:680px'), `${label} must not keep the old 680px shell`);
+};
+
 const builtEmail = buildAdminOrderPaidEmail({
   order,
   items,
@@ -61,6 +77,7 @@ assert.ok(builtEmail.htmlContent.includes('Nadia &lt;Admin&gt;'), 'HTML email mu
 assert.ok(builtEmail.htmlContent.includes('Cheesy Dress'));
 assert.ok(builtEmail.textContent.includes('Qty: 2 | Size/Color: L / Brown'));
 assert.ok(builtEmail.textContent.includes('Rp\u00a0305.000'));
+assertMobileResponsiveBrandTemplate(builtEmail.htmlContent, 'admin paid email');
 
 const builtCustomerEmail = buildCustomerOrderPaidEmail({
   order,
@@ -75,6 +92,7 @@ assert.ok(builtCustomerEmail.htmlContent.includes('Rp 250.000'), 'Customer HTML
 assert.ok(builtCustomerEmail.textContent.includes('Payment status: paid'));
 assert.ok(builtCustomerEmail.textContent.includes('Size: L | Color: Brown | Subtotal: Rp 250.000'));
 assert.ok(builtCustomerEmail.textContent.includes('Order detail: https://nainaraboutique.example/#order-detail?id=42'));
+assertMobileResponsiveBrandTemplate(builtCustomerEmail.htmlContent, 'customer paid email');
 
 const builtRefundRequestedEmail = buildCustomerRefundStatusEmail({
   order: { ...order, refund_status: 'requested', refund_amount: '125000.00', refund_reason: 'Wrong size <ordered>' },
@@ -86,6 +104,7 @@ assert.strictEqual(builtRefundRequestedEmail.subject, 'Refund request received f
 assert.ok(builtRefundRequestedEmail.htmlContent.includes('Wrong size &lt;ordered&gt;'));
 assert.ok(builtRefundRequestedEmail.textContent.includes('Refund status: requested'));
 assert.ok(builtRefundRequestedEmail.textContent.includes('Refund amount: Rp\u00a0125.000'));
+assertMobileResponsiveBrandTemplate(builtRefundRequestedEmail.htmlContent, 'customer refund request email');
 
 const builtRefundRejectedEmail = buildCustomerRefundStatusEmail({
   order: { ...order, refund_status: 'rejected', refund_amount: '125000.00', refund_midtrans_response: { rejection_reason: 'Outside policy window' } },
@@ -103,6 +122,7 @@ const builtCancelledEmail = buildCustomerOrderCancelledEmail({
 });
 assert.strictEqual(builtCancelledEmail.subject, 'Order #42 has been cancelled');
 assert.ok(builtCancelledEmail.textContent.includes('has been cancelled'));
+assertMobileResponsiveBrandTemplate(builtCancelledEmail.htmlContent, 'customer cancelled email');
 
 const builtShippedEmail = buildCustomerOrderShippedEmail({
   order: { ...order, tracking_courier: 'JNE', tracking_number: 'JP1234567890' },
@@ -112,6 +132,7 @@ const builtShippedEmail = buildCustomerOrderShippedEmail({
 assert.strictEqual(builtShippedEmail.subject, 'Order #42 is on the way');
 assert.ok(builtShippedEmail.textContent.includes('Courier: JNE'));
 assert.ok(builtShippedEmail.textContent.includes('Tracking number: JP1234567890'));
+assertMobileResponsiveBrandTemplate(builtShippedEmail.htmlContent, 'customer shipped email');
 
 const builtAdminRefundEmail = buildAdminRefundRequestEmail({
   order: { ...order, refund_reason: 'Damaged item' },
@@ -122,6 +143,7 @@ assert.strictEqual(builtAdminRefundEmail.subject, 'Refund request for order #42'
 assert.ok(builtAdminRefundEmail.textContent.includes('Email: nadia@example.test'));
 assert.ok(builtAdminRefundEmail.textContent.includes('Phone: +628123456789'));
 assert.ok(builtAdminRefundEmail.textContent.includes('Refund reason: Damaged item'));
+assertMobileResponsiveBrandTemplate(builtAdminRefundEmail.htmlContent, 'admin refund email');
 
 let capturedRequest;
 const fakeFetch = async (url, options) => {

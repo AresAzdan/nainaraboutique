@@ -7,6 +7,31 @@ const requiredEmailEnv = [
   'EMAIL_FROM_NAME',
 ];
 
+const buildEmailHead = (title) => `
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @media only screen and (max-width: 600px) {
+        .email-shell { width: 100% !important; max-width: 600px !important; }
+        .outer-pad { padding: 14px 10px !important; }
+        .header-pad { padding: 22px 18px !important; }
+        .content-pad { padding: 22px 16px !important; }
+        .brand-title { font-size: 24px !important; line-height: 1.2 !important; }
+        .email-title { font-size: 21px !important; line-height: 1.3 !important; margin-bottom: 10px !important; }
+        .section-title { font-size: 18px !important; }
+        .summary-label, .summary-value { display: block !important; width: 100% !important; box-sizing: border-box !important; text-align: left !important; padding: 12px 14px 4px !important; }
+        .summary-value { padding: 0 14px 12px !important; }
+        .item-table { table-layout: fixed !important; }
+        .item-cell { padding: 12px 10px !important; font-size: 13px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+        .qty-cell { width: 44px !important; padding: 12px 6px !important; }
+        .subtotal-cell { width: 34% !important; padding: 12px 8px !important; }
+        .button-link { display: block !important; width: 100% !important; box-sizing: border-box !important; text-align: center !important; }
+      }
+    </style>
+  </head>`;
+
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -52,47 +77,47 @@ const buildAdminOrderPaidEmail = ({ order, items = [], adminOrderDetailUrl }) =>
     const itemName = item.product_name || item.name || `Product #${item.product_id || '-'}`;
     return `
       <tr>
-        <td style="padding:10px 12px;border-bottom:1px solid #eadfd7;">${escapeHtml(itemName)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #eadfd7;text-align:center;">${escapeHtml(item.quantity)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #eadfd7;">${escapeHtml(normalizeItemVariant(item))}</td>
+        <td class="item-cell" style="padding:12px;border-bottom:1px solid #ebe4da;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(itemName)}</td>
+        <td class="item-cell qty-cell" style="width:52px;padding:12px 8px;border-bottom:1px solid #ebe4da;text-align:center;">${escapeHtml(item.quantity)}</td>
+        <td class="item-cell" style="width:30%;padding:12px;border-bottom:1px solid #ebe4da;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(normalizeItemVariant(item))}</td>
       </tr>`;
   }).join('') || `
       <tr>
-        <td colspan="3" style="padding:10px 12px;border-bottom:1px solid #eadfd7;">No item details available.</td>
+        <td colspan="3" class="item-cell" style="padding:12px;border-bottom:1px solid #ebe4da;">No item details available.</td>
       </tr>`;
 
   const htmlContent = `<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
-    <div style="max-width:680px;margin:0 auto;padding:24px;">
-      <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #eadfd7;">
-        <div style="background:#8b5e3c;color:#ffffff;padding:24px;">
-          <h1 style="margin:0;font-size:24px;line-height:1.3;">New Paid Order</h1>
+<html>${buildEmailHead(`New paid order #${order.id}`)}
+  <body style="margin:0;padding:0;background:#FAF8F5;font-family:Arial,Helvetica,sans-serif;color:#3b332c;">
+    <div class="email-shell outer-pad" style="width:100%;max-width:600px;margin:0 auto;padding:24px 16px;box-sizing:border-box;">
+      <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #ebe4da;">
+        <div class="header-pad" style="background:#5D5340;color:#ffffff;padding:24px;">
+          <h1 class="email-title" style="margin:0;font-size:24px;line-height:1.3;">New Paid Order</h1>
           <p style="margin:8px 0 0;font-size:14px;opacity:.9;">Order #${escapeHtml(order.id)} is ready for admin review.</p>
         </div>
-        <div style="padding:24px;">
+        <div class="content-pad" style="padding:24px;">
           <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">A customer payment has been successfully confirmed. Please review the order details and prepare fulfillment.</p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 20px;">
-            <tr><td style="padding:8px 0;color:#7a6a61;width:180px;">Order ID</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(order.id)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Customer</td><td style="padding:8px 0;">${escapeHtml(customerName)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Phone</td><td style="padding:8px 0;">${escapeHtml(customerPhone)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Total Payment</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Payment Method</td><td style="padding:8px 0;">${escapeHtml(paymentMethod)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;vertical-align:top;">Shipping Address</td><td style="padding:8px 0;white-space:pre-line;">${escapeHtml(shippingAddress)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;width:180px;vertical-align:top;">Order ID</td><td class="summary-value" style="padding:8px 0;font-weight:700;vertical-align:top;">${escapeHtml(order.id)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Customer</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(customerName)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Phone</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(customerPhone)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Total Payment</td><td class="summary-value" style="padding:8px 0;font-weight:700;vertical-align:top;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Payment Method</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(paymentMethod)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Shipping Address</td><td class="summary-value" style="padding:8px 0;white-space:pre-line;vertical-align:top;">${escapeHtml(shippingAddress)}</td></tr>
           </table>
-          <h2 style="font-size:18px;margin:0 0 12px;">Items</h2>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+          <h2 class="section-title" style="font-size:18px;margin:0 0 12px;">Items</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:10px;overflow:hidden;margin-bottom:26px;">
             <thead>
-              <tr style="background:#f3e8df;">
+              <tr style="background:#ebe4da;">
                 <th align="left" style="padding:10px 12px;">Item</th>
-                <th align="center" style="padding:10px 12px;">Qty</th>
+                <th align="center" class="qty-cell" style="width:52px;padding:10px 8px;">Qty</th>
                 <th align="left" style="padding:10px 12px;">Size / Color</th>
               </tr>
             </thead>
             <tbody>${itemRows}
             </tbody>
           </table>
-          <a href="${escapeHtml(adminOrderDetailUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;">Open admin order detail</a>
+          <a href="${escapeHtml(adminOrderDetailUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;">Open admin order detail</a>
         </div>
       </div>
     </div>
@@ -133,16 +158,16 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
     const subtotal = quantity * price;
     return `
       <tr>
-        <td style="padding:14px 12px;border-bottom:1px solid #eadfd7;vertical-align:top;">
-          <div style="font-weight:700;color:#3b2f2f;">${escapeHtml(itemName)}</div>
-          <div style="margin-top:4px;font-size:12px;color:#8a786d;">Size: ${escapeHtml(item.size || '-')} &nbsp;|&nbsp; Color: ${escapeHtml(item.color || '-')}</div>
+        <td class="item-cell" style="padding:14px 12px;border-bottom:1px solid #ebe4da;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;">
+          <div style="font-weight:700;color:#3b332c;">${escapeHtml(itemName)}</div>
+          <div style="margin-top:4px;font-size:12px;color:#766d60;">Size: ${escapeHtml(item.size || '-')} &nbsp;|&nbsp; Color: ${escapeHtml(item.color || '-')}</div>
         </td>
-        <td style="padding:14px 12px;border-bottom:1px solid #eadfd7;text-align:center;vertical-align:top;">${escapeHtml(quantity)}</td>
-        <td style="padding:14px 12px;border-bottom:1px solid #eadfd7;text-align:right;vertical-align:top;font-weight:700;">${escapeHtml(formatCurrency(subtotal))}</td>
+        <td class="item-cell qty-cell" style="width:52px;padding:14px 8px;border-bottom:1px solid #ebe4da;text-align:center;vertical-align:top;">${escapeHtml(quantity)}</td>
+        <td class="item-cell subtotal-cell" style="width:34%;padding:14px 12px;border-bottom:1px solid #ebe4da;text-align:right;vertical-align:top;font-weight:700;word-break:break-word;">${escapeHtml(formatCurrency(subtotal))}</td>
       </tr>`;
   }).join('') || `
       <tr>
-        <td colspan="3" style="padding:14px 12px;border-bottom:1px solid #eadfd7;">No item details available.</td>
+        <td colspan="3" class="item-cell" style="padding:14px 12px;border-bottom:1px solid #ebe4da;">No item details available.</td>
       </tr>`;
 
   const textItems = items.length
@@ -155,55 +180,50 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
     : ['- No item details available.'];
 
   const htmlContent = `<!doctype html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>Payment confirmed for order #${escapeHtml(order.id)}</title>
-  </head>
-  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
+<html>${buildEmailHead(`Payment confirmed for order #${order.id}`)}
+  <body style="margin:0;padding:0;background:#FAF8F5;font-family:Arial,Helvetica,sans-serif;color:#3b332c;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Thank you for your Nainara Boutique order. Your payment has been confirmed.</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f3ef;border-collapse:collapse;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#FAF8F5;border-collapse:collapse;">
       <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;background:#fffdf9;border:1px solid #eadfd7;border-radius:18px;overflow:hidden;border-collapse:separate;">
+        <td align="center" class="outer-pad" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="email-shell" style="width:100%;max-width:600px;background:#fffdf9;border:1px solid #ebe4da;border-radius:18px;overflow:hidden;border-collapse:separate;">
             <tr>
-              <td style="background:#8b5e3c;padding:28px 24px;text-align:center;color:#ffffff;">
-                <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;letter-spacing:1.6px;font-weight:700;">Nainara Boutique</div>
-                <div style="margin-top:8px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#f6eadf;">Payment Confirmed</div>
+              <td class="header-pad" style="background:#5D5340;padding:28px 24px;text-align:center;color:#ffffff;">
+                <div class="brand-title" style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;letter-spacing:1.6px;font-weight:700;">Nainara Boutique</div>
+                <div style="margin-top:8px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#ebe4da;">Payment Confirmed</div>
               </td>
             </tr>
             <tr>
-              <td style="padding:28px 24px;">
-                <h1 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;color:#3b2f2f;">Thank you, ${escapeHtml(customerName)}.</h1>
-                <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5f5048;">We have received your payment and are preparing your order with care. Below is your confirmation summary.</p>
+              <td class="content-pad" style="padding:28px 24px;">
+                <h1 class="email-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;color:#3b332c;">Thank you, ${escapeHtml(customerName)}.</h1>
+                <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5D5340;">We have received your payment and are preparing your order with care. Below is your confirmation summary.</p>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fbf6ef;border:1px solid #eadfd7;border-radius:14px;margin:0 0 22px;">
-                  <tr><td style="padding:14px 16px;color:#8a786d;width:42%;">Order ID</td><td style="padding:14px 16px;font-weight:700;text-align:right;">#${escapeHtml(order.id)}</td></tr>
-                  <tr><td style="padding:0 16px 14px;color:#8a786d;">Payment Status</td><td style="padding:0 16px 14px;font-weight:700;text-align:right;text-transform:capitalize;color:#6f4b31;">${escapeHtml(paymentStatus)}</td></tr>
-                  <tr><td style="padding:0 16px 16px;color:#8a786d;">Payment Amount</td><td style="padding:0 16px 16px;font-size:18px;font-weight:700;text-align:right;color:#3b2f2f;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ebe4da;border:1px solid #ebe4da;border-radius:14px;margin:0 0 22px;">
+                  <tr><td class="summary-label" style="padding:14px 16px;color:#766d60;width:42%;vertical-align:top;">Order ID</td><td class="summary-value" style="padding:14px 16px;font-weight:700;text-align:right;vertical-align:top;">#${escapeHtml(order.id)}</td></tr>
+                  <tr><td class="summary-label" style="padding:0 16px 14px;color:#766d60;vertical-align:top;">Payment Status</td><td class="summary-value" style="padding:0 16px 14px;font-weight:700;text-align:right;text-transform:capitalize;color:#5D5340;vertical-align:top;">${escapeHtml(paymentStatus)}</td></tr>
+                  <tr><td class="summary-label" style="padding:0 16px 16px;color:#766d60;vertical-align:top;">Payment Amount</td><td class="summary-value" style="padding:0 16px 16px;font-size:18px;font-weight:700;text-align:right;color:#3b332c;vertical-align:top;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
                 </table>
 
-                <h2 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b2f2f;">Order items</h2>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:12px;overflow:hidden;margin:0 0 22px;background:#ffffff;">
+                <h2 class="section-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Order items</h2>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0 0 26px;background:#ffffff;">
                   <thead>
-                    <tr style="background:#f3e8df;color:#5f5048;">
+                    <tr style="background:#ebe4da;color:#5D5340;">
                       <th align="left" style="padding:12px;font-size:13px;">Product</th>
-                      <th align="center" style="padding:12px;font-size:13px;">Qty</th>
-                      <th align="right" style="padding:12px;font-size:13px;">Subtotal</th>
+                      <th align="center" class="qty-cell" style="width:52px;padding:12px 8px;font-size:13px;">Qty</th>
+                      <th align="right" class="subtotal-cell" style="width:34%;padding:12px 8px;font-size:13px;">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody>${itemRows}
                   </tbody>
                 </table>
 
-                <h2 style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b2f2f;">Shipping address</h2>
-                <p style="margin:0 0 24px;padding:14px 16px;background:#fbf6ef;border:1px solid #eadfd7;border-radius:12px;font-size:14px;line-height:1.7;white-space:pre-line;color:#5f5048;">${escapeHtml(shippingAddress)}</p>
+                <h2 class="section-title" style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Shipping address</h2>
+                <p style="margin:0 0 24px;padding:14px 16px;background:#ebe4da;border:1px solid #ebe4da;border-radius:12px;font-size:14px;line-height:1.7;white-space:pre-line;color:#5D5340;">${escapeHtml(shippingAddress)}</p>
 
                 <div style="text-align:center;margin:28px 0 10px;">
-                  <a href="${escapeHtml(orderDetailUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">View order details</a>
+                  <a href="${escapeHtml(orderDetailUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">View order details</a>
                 </div>
-                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#8a786d;text-align:center;">If the button does not work, open this link: <br><span style="word-break:break-all;">${escapeHtml(orderDetailUrl)}</span></p>
+                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#766d60;text-align:center;">If the button does not work, open this link: <br><span style="word-break:break-all;">${escapeHtml(orderDetailUrl)}</span></p>
               </td>
             </tr>
           </table>
@@ -237,13 +257,13 @@ const getItemName = (item) => item.product_name || item.name || `Product #${item
 
 const buildCompactItemRows = (items = []) => items.map((item) => `
       <tr>
-        <td style="padding:13px 12px;border-bottom:1px solid #eadfd7;vertical-align:top;">
-          <div style="font-weight:700;color:#3b2f2f;">${escapeHtml(getItemName(item))}</div>
-          <div style="margin-top:4px;font-size:12px;color:#8a786d;">${escapeHtml(normalizeItemVariant(item))}</div>
+        <td class="item-cell" style="padding:13px 12px;border-bottom:1px solid #ebe4da;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;">
+          <div style="font-weight:700;color:#3b332c;">${escapeHtml(getItemName(item))}</div>
+          <div style="margin-top:4px;font-size:12px;color:#766d60;">${escapeHtml(normalizeItemVariant(item))}</div>
         </td>
-        <td style="padding:13px 12px;border-bottom:1px solid #eadfd7;text-align:center;vertical-align:top;">${escapeHtml(item.quantity || '-')}</td>
+        <td class="item-cell qty-cell" style="width:52px;padding:13px 8px;border-bottom:1px solid #ebe4da;text-align:center;vertical-align:top;">${escapeHtml(item.quantity || '-')}</td>
       </tr>`).join('') || `
-      <tr><td colspan="2" style="padding:13px 12px;border-bottom:1px solid #eadfd7;">No item details available.</td></tr>`;
+      <tr><td colspan="2" class="item-cell" style="padding:13px 12px;border-bottom:1px solid #ebe4da;">No item details available.</td></tr>`;
 
 const buildTextItemLines = (items = []) => (items.length
   ? items.map((item) => `- ${getItemName(item)} | Qty: ${item.quantity || '-'} | Size/Color: ${normalizeItemVariant(item)}`)
@@ -252,47 +272,42 @@ const buildTextItemLines = (items = []) => (items.length
 const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], items = [], ctaUrl, ctaLabel }) => {
   const summaryHtml = summaryRows.filter((row) => row && row.value !== undefined && row.value !== null && row.value !== '').map((row) => `
                   <tr>
-                    <td style="padding:${row.first ? '14px' : '0'} 16px 14px;color:#8a786d;width:42%;vertical-align:top;">${escapeHtml(row.label)}</td>
-                    <td style="padding:${row.first ? '14px' : '0'} 16px 14px;font-weight:700;text-align:right;color:#3b2f2f;vertical-align:top;">${escapeHtml(row.value)}</td>
+                    <td class="summary-label" style="padding:${row.first ? '14px' : '0'} 16px 14px;color:#766d60;width:42%;vertical-align:top;">${escapeHtml(row.label)}</td>
+                    <td class="summary-value" style="padding:${row.first ? '14px' : '0'} 16px 14px;font-weight:700;text-align:right;color:#3b332c;vertical-align:top;">${escapeHtml(row.value)}</td>
                   </tr>`).join('');
   const itemRows = buildCompactItemRows(items);
   const linkHtml = ctaUrl ? `
                 <div style="text-align:center;margin:28px 0 10px;">
-                  <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">${escapeHtml(ctaLabel || 'View details')}</a>
+                  <a href="${escapeHtml(ctaUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">${escapeHtml(ctaLabel || 'View details')}</a>
                 </div>
-                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#8a786d;text-align:center;">If the button does not work, open this link:<br><span style="word-break:break-all;">${escapeHtml(ctaUrl)}</span></p>` : '';
+                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#766d60;text-align:center;">If the button does not work, open this link:<br><span style="word-break:break-all;">${escapeHtml(ctaUrl)}</span></p>` : '';
 
   return `<!doctype html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <title>${escapeHtml(title)}</title>
-  </head>
-  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
+<html>${buildEmailHead(title)}
+  <body style="margin:0;padding:0;background:#FAF8F5;font-family:Arial,Helvetica,sans-serif;color:#3b332c;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preview || title)}</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f3ef;border-collapse:collapse;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#FAF8F5;border-collapse:collapse;">
       <tr>
-        <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;background:#fffdf9;border:1px solid #eadfd7;border-radius:18px;overflow:hidden;border-collapse:separate;">
+        <td align="center" class="outer-pad" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="email-shell" style="width:100%;max-width:600px;background:#fffdf9;border:1px solid #ebe4da;border-radius:18px;overflow:hidden;border-collapse:separate;">
             <tr>
-              <td style="background:#8b5e3c;padding:28px 24px;text-align:center;color:#ffffff;">
-                <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;letter-spacing:1.6px;font-weight:700;">Nainara Boutique</div>
-                <div style="margin-top:8px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#f6eadf;">${escapeHtml(eyebrow)}</div>
+              <td class="header-pad" style="background:#5D5340;padding:28px 24px;text-align:center;color:#ffffff;">
+                <div class="brand-title" style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;letter-spacing:1.6px;font-weight:700;">Nainara Boutique</div>
+                <div style="margin-top:8px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#ebe4da;">${escapeHtml(eyebrow)}</div>
               </td>
             </tr>
             <tr>
-              <td style="padding:28px 24px;">
-                <h1 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;color:#3b2f2f;">${escapeHtml(title)}</h1>
-                <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5f5048;">${escapeHtml(intro)}</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#fbf6ef;border:1px solid #eadfd7;border-radius:14px;margin:0 0 22px;">${summaryHtml}
+              <td class="content-pad" style="padding:28px 24px;">
+                <h1 class="email-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;color:#3b332c;">${escapeHtml(title)}</h1>
+                <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#5D5340;">${escapeHtml(intro)}</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ebe4da;border:1px solid #ebe4da;border-radius:14px;margin:0 0 22px;">${summaryHtml}
                 </table>
-                <h2 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b2f2f;">Order items</h2>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:12px;overflow:hidden;margin:0 0 22px;background:#ffffff;">
+                <h2 class="section-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Order items</h2>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0 0 26px;background:#ffffff;">
                   <thead>
-                    <tr style="background:#f3e8df;color:#5f5048;">
+                    <tr style="background:#ebe4da;color:#5D5340;">
                       <th align="left" style="padding:12px;font-size:13px;">Product</th>
-                      <th align="center" style="padding:12px;font-size:13px;">Qty</th>
+                      <th align="center" class="qty-cell" style="width:52px;padding:12px 8px;font-size:13px;">Qty</th>
                     </tr>
                   </thead>
                   <tbody>${itemRows}
@@ -416,30 +431,30 @@ const buildAdminRefundRequestEmail = ({ order, items = [], adminOrderDetailUrl }
   const customerPhone = order.phone || '-';
   const itemRows = buildCompactItemRows(items);
   const htmlContent = `<!doctype html>
-<html>
-  <body style="margin:0;padding:0;background:#f8f3ef;font-family:Arial,Helvetica,sans-serif;color:#3b2f2f;">
-    <div style="max-width:680px;margin:0 auto;padding:24px;">
-      <div style="background:#fffdf9;border-radius:16px;overflow:hidden;border:1px solid #eadfd7;">
-        <div style="background:#8b5e3c;color:#ffffff;padding:24px;">
-          <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.3;">Refund Request Submitted</h1>
+<html>${buildEmailHead(`Refund request for order #${order.id}`)}
+  <body style="margin:0;padding:0;background:#FAF8F5;font-family:Arial,Helvetica,sans-serif;color:#3b332c;">
+    <div class="email-shell outer-pad" style="width:100%;max-width:600px;margin:0 auto;padding:24px 16px;box-sizing:border-box;">
+      <div style="background:#fffdf9;border-radius:16px;overflow:hidden;border:1px solid #ebe4da;">
+        <div class="header-pad" style="background:#5D5340;color:#ffffff;padding:24px;">
+          <h1 class="email-title" style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.3;">Refund Request Submitted</h1>
           <p style="margin:8px 0 0;font-size:14px;opacity:.9;">Order #${escapeHtml(order.id)} needs admin review.</p>
         </div>
-        <div style="padding:24px;">
+        <div class="content-pad" style="padding:24px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 20px;">
-            <tr><td style="padding:8px 0;color:#7a6a61;width:180px;">Order ID</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(order.id)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Customer</td><td style="padding:8px 0;">${escapeHtml(customerName)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Email</td><td style="padding:8px 0;">${escapeHtml(customerEmail)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Phone</td><td style="padding:8px 0;">${escapeHtml(customerPhone)}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Refund Reason</td><td style="padding:8px 0;white-space:pre-line;">${escapeHtml(order.refund_reason || '-')}</td></tr>
-            <tr><td style="padding:8px 0;color:#7a6a61;">Total Amount</td><td style="padding:8px 0;font-weight:700;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;width:180px;vertical-align:top;">Order ID</td><td class="summary-value" style="padding:8px 0;font-weight:700;vertical-align:top;">${escapeHtml(order.id)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Customer</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(customerName)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Email</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(customerEmail)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Phone</td><td class="summary-value" style="padding:8px 0;vertical-align:top;">${escapeHtml(customerPhone)}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Refund Reason</td><td class="summary-value" style="padding:8px 0;white-space:pre-line;vertical-align:top;">${escapeHtml(order.refund_reason || '-')}</td></tr>
+            <tr><td class="summary-label" style="padding:8px 12px 8px 0;color:#766d60;vertical-align:top;">Total Amount</td><td class="summary-value" style="padding:8px 0;font-weight:700;vertical-align:top;">${escapeHtml(formatCurrency(order.total_amount))}</td></tr>
           </table>
-          <h2 style="font-size:18px;margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;">Items</h2>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #eadfd7;border-radius:10px;overflow:hidden;margin-bottom:24px;">
-            <thead><tr style="background:#f3e8df;"><th align="left" style="padding:10px 12px;">Item</th><th align="center" style="padding:10px 12px;">Qty</th></tr></thead>
+          <h2 class="section-title" style="font-size:18px;margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;">Items</h2>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:10px;overflow:hidden;margin-bottom:26px;">
+            <thead><tr style="background:#ebe4da;"><th align="left" style="padding:10px 12px;">Item</th><th align="center" class="qty-cell" style="width:52px;padding:10px 8px;">Qty</th></tr></thead>
             <tbody>${itemRows}
             </tbody>
           </table>
-          <a href="${escapeHtml(adminOrderDetailUrl)}" style="display:inline-block;background:#8b5e3c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;">Open admin order detail</a>
+          <a href="${escapeHtml(adminOrderDetailUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;">Open admin order detail</a>
         </div>
       </div>
     </div>
