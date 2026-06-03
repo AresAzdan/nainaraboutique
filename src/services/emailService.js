@@ -147,7 +147,7 @@ const buildAdminOrderPaidEmail = ({ order, items = [], adminOrderDetailUrl }) =>
 };
 
 
-const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
+const buildCustomerOrderPaidEmail = ({ order, items = [] }) => {
   const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
   const paymentStatus = order.status || 'paid';
   const shippingAddress = order.shipping_address || '-';
@@ -205,7 +205,7 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
                 </table>
 
                 <h2 class="section-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Order items</h2>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0 0 26px;background:#ffffff;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0 0 22px;background:#ffffff;">
                   <thead>
                     <tr style="background:#ebe4da;color:#5D5340;">
                       <th align="left" style="padding:12px;font-size:13px;">Product</th>
@@ -218,12 +218,7 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
                 </table>
 
                 <h2 class="section-title" style="margin:0 0 8px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Shipping address</h2>
-                <p style="margin:0 0 24px;padding:14px 16px;background:#ebe4da;border:1px solid #ebe4da;border-radius:12px;font-size:14px;line-height:1.7;white-space:pre-line;color:#5D5340;">${escapeHtml(shippingAddress)}</p>
-
-                <div style="text-align:center;margin:28px 0 10px;">
-                  <a href="${escapeHtml(orderDetailUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">View order details</a>
-                </div>
-                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#766d60;text-align:center;">If the button does not work, open this link: <br><span style="word-break:break-all;">${escapeHtml(orderDetailUrl)}</span></p>
+                <p style="margin:0;padding:14px 16px;background:#ebe4da;border:1px solid #ebe4da;border-radius:12px;font-size:14px;line-height:1.7;white-space:pre-line;color:#5D5340;">${escapeHtml(shippingAddress)}</p>
               </td>
             </tr>
           </table>
@@ -242,7 +237,6 @@ const buildCustomerOrderPaidEmail = ({ order, items = [], orderDetailUrl }) => {
     'Items:',
     ...textItems,
     `Shipping address: ${shippingAddress}`,
-    `Order detail: ${orderDetailUrl}`,
   ].join('\n');
 
   return {
@@ -269,18 +263,13 @@ const buildTextItemLines = (items = []) => (items.length
   ? items.map((item) => `- ${getItemName(item)} | Qty: ${item.quantity || '-'} | Size/Color: ${normalizeItemVariant(item)}`)
   : ['- No item details available.']);
 
-const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], items = [], ctaUrl, ctaLabel }) => {
+const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], items = [] }) => {
   const summaryHtml = summaryRows.filter((row) => row && row.value !== undefined && row.value !== null && row.value !== '').map((row) => `
                   <tr>
                     <td class="summary-label" style="padding:${row.first ? '14px' : '0'} 16px 14px;color:#766d60;width:42%;vertical-align:top;">${escapeHtml(row.label)}</td>
                     <td class="summary-value" style="padding:${row.first ? '14px' : '0'} 16px 14px;font-weight:700;text-align:right;color:#3b332c;vertical-align:top;">${escapeHtml(row.value)}</td>
                   </tr>`).join('');
   const itemRows = buildCompactItemRows(items);
-  const linkHtml = ctaUrl ? `
-                <div style="text-align:center;margin:28px 0 10px;">
-                  <a href="${escapeHtml(ctaUrl)}" class="button-link" style="display:inline-block;background:#5D5340;color:#ffffff;text-decoration:none;padding:13px 22px;border-radius:999px;font-weight:700;font-size:14px;">${escapeHtml(ctaLabel || 'View details')}</a>
-                </div>
-                <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#766d60;text-align:center;">If the button does not work, open this link:<br><span style="word-break:break-all;">${escapeHtml(ctaUrl)}</span></p>` : '';
 
   return `<!doctype html>
 <html>${buildEmailHead(title)}
@@ -303,7 +292,7 @@ const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#ebe4da;border:1px solid #ebe4da;border-radius:14px;margin:0 0 22px;">${summaryHtml}
                 </table>
                 <h2 class="section-title" style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#3b332c;">Order items</h2>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0 0 26px;background:#ffffff;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="item-table" style="border-collapse:collapse;table-layout:fixed;border:1px solid #ebe4da;border-radius:12px;overflow:hidden;margin:0;background:#ffffff;">
                   <thead>
                     <tr style="background:#ebe4da;color:#5D5340;">
                       <th align="left" style="padding:12px;font-size:13px;">Product</th>
@@ -312,7 +301,7 @@ const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], 
                   </thead>
                   <tbody>${itemRows}
                   </tbody>
-                </table>${linkHtml}
+                </table>
               </td>
             </tr>
           </table>
@@ -323,7 +312,7 @@ const buildBoutiqueEmail = ({ title, eyebrow, preview, intro, summaryRows = [], 
 </html>`;
 };
 
-const buildCustomerRefundStatusEmail = ({ order, items = [], orderDetailUrl, status, reason }) => {
+const buildCustomerRefundStatusEmail = ({ order, items = [], status, reason }) => {
   const normalizedStatus = String(status || order.refund_status || 'requested').toLowerCase();
   const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
   const amount = order.refund_amount ? formatCurrency(order.refund_amount) : null;
@@ -353,8 +342,6 @@ const buildCustomerRefundStatusEmail = ({ order, items = [], orderDetailUrl, sta
     intro: introByStatus[normalizedStatus] || `Hi ${customerName}, there is an update to your refund request.`,
     summaryRows: rows,
     items,
-    ctaUrl: orderDetailUrl,
-    ctaLabel: 'View order details',
   });
   const textContent = [
     'Nainara Boutique - Refund Update',
@@ -365,12 +352,11 @@ const buildCustomerRefundStatusEmail = ({ order, items = [], orderDetailUrl, sta
     reasonText ? `${normalizedStatus === 'rejected' ? 'Rejection' : 'Refund'} reason: ${reasonText}` : null,
     'Items:',
     ...buildTextItemLines(items),
-    `Order detail: ${orderDetailUrl}`,
   ].filter(Boolean).join('\n');
   return { subject: titleByStatus[normalizedStatus] || `Refund update for order #${order.id}`, htmlContent, textContent };
 };
 
-const buildCustomerOrderCancelledEmail = ({ order, items = [], orderDetailUrl }) => {
+const buildCustomerOrderCancelledEmail = ({ order, items = [] }) => {
   const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
   const htmlContent = buildBoutiqueEmail({
     title: `Order #${order.id} has been cancelled`,
@@ -383,8 +369,6 @@ const buildCustomerOrderCancelledEmail = ({ order, items = [], orderDetailUrl })
       { label: 'Order Total', value: formatCurrency(order.total_amount) },
     ],
     items,
-    ctaUrl: orderDetailUrl,
-    ctaLabel: 'View order details',
   });
   const textContent = [
     'Nainara Boutique - Order Cancelled',
@@ -392,12 +376,11 @@ const buildCustomerOrderCancelledEmail = ({ order, items = [], orderDetailUrl })
     `Order total: ${formatCurrency(order.total_amount)}`,
     'Items:',
     ...buildTextItemLines(items),
-    `Order detail: ${orderDetailUrl}`,
   ].join('\n');
   return { subject: `Order #${order.id} has been cancelled`, htmlContent, textContent };
 };
 
-const buildCustomerOrderShippedEmail = ({ order, items = [], orderDetailUrl }) => {
+const buildCustomerOrderShippedEmail = ({ order, items = [] }) => {
   const customerName = order.recipient_name || order.user_name || 'Nainara Customer';
   const htmlContent = buildBoutiqueEmail({
     title: `Order #${order.id} is on the way`,
@@ -410,8 +393,6 @@ const buildCustomerOrderShippedEmail = ({ order, items = [], orderDetailUrl }) =
       { label: 'Tracking Number', value: order.tracking_number || '-' },
     ],
     items,
-    ctaUrl: orderDetailUrl,
-    ctaLabel: 'View order details',
   });
   const textContent = [
     'Nainara Boutique - Order Shipped',
@@ -420,7 +401,6 @@ const buildCustomerOrderShippedEmail = ({ order, items = [], orderDetailUrl }) =
     `Tracking number: ${order.tracking_number || '-'}`,
     'Items:',
     ...buildTextItemLines(items),
-    `Order detail: ${orderDetailUrl}`,
   ].join('\n');
   return { subject: `Order #${order.id} is on the way`, htmlContent, textContent };
 };

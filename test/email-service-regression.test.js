@@ -51,6 +51,13 @@ const items = [
   { product_id: 202, product_name: 'Pearl Brooch', quantity: 1, price: 50000, size: null, color: 'Ivory' },
 ];
 
+const assertCustomerOrderDetailCtaRemoved = (email, label) => {
+  assert.ok(!email.htmlContent.includes('View order details'), `${label} must not include customer order-detail CTA button`);
+  assert.ok(!email.htmlContent.includes('If the button does not work'), `${label} must not include customer order-detail fallback instructions`);
+  assert.ok(!email.htmlContent.includes('https://nainaraboutique.example/#order-detail?id=42'), `${label} HTML must not include customer order-detail raw URL`);
+  assert.ok(!email.textContent.includes('Order detail:'), `${label} text must not include customer order-detail raw URL`);
+};
+
 const assertMobileResponsiveBrandTemplate = (htmlContent, label) => {
   assert.ok(htmlContent.includes('background:#FAF8F5'), `${label} must use Nainara main background`);
   assert.ok(htmlContent.includes('background:#5D5340'), `${label} must use Nainara accent color`);
@@ -91,7 +98,7 @@ assert.ok(builtCustomerEmail.htmlContent.includes('Nadia &lt;Admin&gt;'), 'Custo
 assert.ok(builtCustomerEmail.htmlContent.includes('Rp 250.000'), 'Customer HTML email must include item subtotals');
 assert.ok(builtCustomerEmail.textContent.includes('Payment status: paid'));
 assert.ok(builtCustomerEmail.textContent.includes('Size: L | Color: Brown | Subtotal: Rp 250.000'));
-assert.ok(builtCustomerEmail.textContent.includes('Order detail: https://nainaraboutique.example/#order-detail?id=42'));
+assertCustomerOrderDetailCtaRemoved(builtCustomerEmail, 'customer paid email');
 assertMobileResponsiveBrandTemplate(builtCustomerEmail.htmlContent, 'customer paid email');
 
 const builtRefundRequestedEmail = buildCustomerRefundStatusEmail({
@@ -104,6 +111,7 @@ assert.strictEqual(builtRefundRequestedEmail.subject, 'Refund request received f
 assert.ok(builtRefundRequestedEmail.htmlContent.includes('Wrong size &lt;ordered&gt;'));
 assert.ok(builtRefundRequestedEmail.textContent.includes('Refund status: requested'));
 assert.ok(builtRefundRequestedEmail.textContent.includes('Refund amount: Rp\u00a0125.000'));
+assertCustomerOrderDetailCtaRemoved(builtRefundRequestedEmail, 'customer refund request email');
 assertMobileResponsiveBrandTemplate(builtRefundRequestedEmail.htmlContent, 'customer refund request email');
 
 const builtRefundRejectedEmail = buildCustomerRefundStatusEmail({
@@ -114,6 +122,7 @@ const builtRefundRejectedEmail = buildCustomerRefundStatusEmail({
 });
 assert.strictEqual(builtRefundRejectedEmail.subject, 'Refund request update for order #42');
 assert.ok(builtRefundRejectedEmail.textContent.includes('Rejection reason: Outside policy window'));
+assertCustomerOrderDetailCtaRemoved(builtRefundRejectedEmail, 'customer refund rejected email');
 
 const builtCancelledEmail = buildCustomerOrderCancelledEmail({
   order,
@@ -122,6 +131,7 @@ const builtCancelledEmail = buildCustomerOrderCancelledEmail({
 });
 assert.strictEqual(builtCancelledEmail.subject, 'Order #42 has been cancelled');
 assert.ok(builtCancelledEmail.textContent.includes('has been cancelled'));
+assertCustomerOrderDetailCtaRemoved(builtCancelledEmail, 'customer cancelled email');
 assertMobileResponsiveBrandTemplate(builtCancelledEmail.htmlContent, 'customer cancelled email');
 
 const builtShippedEmail = buildCustomerOrderShippedEmail({
@@ -132,6 +142,7 @@ const builtShippedEmail = buildCustomerOrderShippedEmail({
 assert.strictEqual(builtShippedEmail.subject, 'Order #42 is on the way');
 assert.ok(builtShippedEmail.textContent.includes('Courier: JNE'));
 assert.ok(builtShippedEmail.textContent.includes('Tracking number: JP1234567890'));
+assertCustomerOrderDetailCtaRemoved(builtShippedEmail, 'customer shipped email');
 assertMobileResponsiveBrandTemplate(builtShippedEmail.htmlContent, 'customer shipped email');
 
 const builtAdminRefundEmail = buildAdminRefundRequestEmail({
@@ -187,7 +198,9 @@ sendAdminOrderPaidNotification({
   const payload = JSON.parse(capturedRequest.options.body);
   assert.deepStrictEqual(payload.to, [{ email: order.customer_email }]);
   assert.strictEqual(payload.subject, 'Payment confirmed for order #42');
-  assert.ok(payload.htmlContent.includes('View order details'));
+  assert.ok(!payload.htmlContent.includes('View order details'));
+  assert.ok(!payload.htmlContent.includes('If the button does not work'));
+  assert.ok(!payload.textContent.includes('Order detail:'));
   assert.ok(payload.textContent.includes('Nainara Boutique - Payment Confirmed'));
 
   return sendCustomerOrderShippedEmail({
@@ -202,6 +215,8 @@ sendAdminOrderPaidNotification({
   let payload = JSON.parse(capturedRequest.options.body);
   assert.strictEqual(payload.subject, 'Order #42 is on the way');
   assert.ok(payload.textContent.includes('Tracking number: JP1234567890'));
+  assert.ok(!payload.htmlContent.includes('View order details'));
+  assert.ok(!payload.textContent.includes('Order detail:'));
 
   return sendCustomerRefundStatusEmail({
     to: order.customer_email,
@@ -216,6 +231,8 @@ sendAdminOrderPaidNotification({
   let payload = JSON.parse(capturedRequest.options.body);
   assert.strictEqual(payload.subject, 'Refund approved for order #42');
   assert.ok(payload.textContent.includes('Refund status: refunded'));
+  assert.ok(!payload.htmlContent.includes('View order details'));
+  assert.ok(!payload.textContent.includes('Order detail:'));
 
   return sendAdminRefundRequestNotification({
     order: { ...order, refund_reason: 'Damaged item' },
