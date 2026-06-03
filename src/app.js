@@ -19,6 +19,7 @@ const { validatePromoCode }  = require('./controllers/promoController');
 const { adminDeleteOrder }    = require('./controllers/orderController');
 const { getHomepage }        = require('./controllers/settingsController');
 const shippingRoutes         = require('./routes/shippingRoutes');
+const { router: devEmailPreviewRoutes } = require('./routes/devEmailPreviewRoutes');
 const { authenticate, authorizeAdmin } = require('./middleware/auth');
 const { errorHandler }       = require('./middleware/errorHandler');
 
@@ -89,6 +90,11 @@ app.get('/site.webmanifest', (_req, res) => {
 app.get('/robots.txt', (_req, res) => {
   res.type('text/plain').sendFile(path.join(__dirname, '../robots.txt'));
 });
+
+// ─── Dev-only Email Preview ──────────────────────────────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/dev/email-preview', devEmailPreviewRoutes);
+}
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
